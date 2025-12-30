@@ -234,7 +234,7 @@ model {
   y_merge = missings_and_censoring(y_merge, n_censR_p, pos_censR_p, y_impute_censR);
 
   // (Hyper-)Priors
-   target += priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, prior_LKJ,
+  priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, prior_LKJ,
                       sigma, n_innos_fix, prior_sigma, n_cov, b_re_pred,
                       prior_b_re_pred, n_out, alpha_out, prior_alpha_out,
                       b_out_pred, prior_b_out, sigma_out, prior_sigma_out,
