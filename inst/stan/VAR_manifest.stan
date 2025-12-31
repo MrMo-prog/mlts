@@ -2,6 +2,7 @@
 functions{
   #include "functions/function_missings_and_censoring.stan"
   #include "functions/function_hyper_priors.stan"
+  #include "functions/function_outcome_prediction.stan"
 }
 data {
   int<lower=1> N; 	// number of observational units
@@ -269,17 +270,9 @@ model {
   } // end loop over subjects
 
   // outcome prediction: get expectations of outcome values
-  if(n_out > 0){
-    for(g in 1:G){
-      int k = 1;
-      matrix[N_G[g],n_random+n_z] b_z = append_col(b[g_id_pos[g,1:N_G[g]],],Z[g_id_pos[g,1:N_G[g]],]);
-      for(i in 1:n_out){
-        int n_bs = n_out_bs[i,1];      // number of predictors for each outcome
-        target += normal_lpdf(out[i,g_id_pos[g,1:N_G[g]]] | alpha_out[g,i] + b_z[,n_out_b_pos[i,1:n_bs]] * segment(b_out_pred[g,],k,n_bs), sigma_out[g,i]);
-        k = k + n_bs; // update index
-        }
-    }
-  }
+  outcome_prediction_lp(n_out, G, n_random, n_z, N_G, g_id_pos, n_out_bs,
+                        n_out_b_pos, b, Z, out, alpha_out, b_out_pred, sigma_out,
+                        is_random);
 }
 
 generated quantities{
