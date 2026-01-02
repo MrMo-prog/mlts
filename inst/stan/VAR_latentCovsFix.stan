@@ -3,6 +3,7 @@ functions{
   #include "functions/function_missings_and_censoring.stan"
   #include "functions/function_hyper_priors.stan"
   #include "functions/function_outcome_prediction.stan"
+  #include "functions/function_calculate_bmu.stan"
 }
 data {
   int<lower=1> N; 	        // number of observational units
@@ -168,7 +169,6 @@ transformed parameters {
   matrix[N, n_random] bmu;     // gammas of person-specific parameters
   matrix[N,n_pars] b;
   array[N] vector[D_cen] sd_noise;
-  array[G] matrix[n_cov, n_random] b_re_pred_mat;
 
 
   vector[n_p] loadB = rep_vector(1, n_p); // measurement model parameters
@@ -177,16 +177,8 @@ transformed parameters {
   vector[n_p] sigmaB = rep_vector(0, n_p);
   vector[n_p] sigmaW = rep_vector(0, n_p);
 
- // REs regressed on covariates
-  b_re_pred_mat[1,,] = rep_matrix(0, n_cov, n_random);
-  b_re_pred_mat[1,1,] = gammas[1,];
-  if(n_cov>1){
-     for(i in 1:n_cov_bs){
-     b_re_pred_mat[1,n_cov_mat[i,1],n_cov_mat[i,2]] = b_re_pred[1,i];
-    }
-  }
-  // calculate population means (intercepts) of person-specific parameters
-  bmu = W * b_re_pred_mat[1,,];
+  bmu = calculate_bmu(G, N, n_random, gammas, n_cov, n_cov_bs, n_cov_mat, b_re_pred,
+                     g_id_pos, W, N_G);
 
   // create array of (person-specific) parameters to use in model
   for(i in 1:n_random){
