@@ -4,6 +4,7 @@ functions{
   #include "functions/function_hyper_priors.stan"
   #include "functions/function_outcome_prediction.stan"
   #include "functions/function_calculate_bmu.stan"
+  #include "functions/function_calculate_b.stan"
 }
 data {
   int<lower=1> N; 	        // number of observational units
@@ -132,7 +133,7 @@ data {
 
 transformed data{
 
-  // creating dummy objects for outcome prediction function
+  // creating dummy objects for severeal functions (e.g. calculate_bmu)
   array[G] int N_G;
   array[G, N] int g_id_pos;
   if(G == 1) {        // safety check in case of future changes
@@ -188,15 +189,8 @@ transformed parameters {
   bmu = calculate_bmu(G, N, n_random, gammas, n_cov, n_cov_bs, n_cov_mat, b_re_pred,
                      g_id_pos, W, N_G);
 
-  // create array of (person-specific) parameters to use in model
-  for(i in 1:n_random){
-    b[,is_random[i]] = to_vector(b_free[,i]);
-  }
-  if(n_fixed>0){
-    for(i in 1:n_fixed){
-      b[,is_fixed[1,i]] = rep_vector(b_fix[1,i],N);
-    }
-  }
+  b = calculate_b(N, n_pars, n_random, is_random, b_free, n_fixed, G, g_id_pos,
+                  N_G, b_fix, is_fixed);
 
   // transformation of log-innovation variances if modeled as person-specific
   for(i in 1:D_cen){
