@@ -149,10 +149,15 @@ model {
   }
 
   y_merge = y;// add observations
-  y_merge = missings_and_censoring(y_merge, n_miss_D, pos_miss_D, y_impute);
-  y_merge = missings_and_censoring(y_merge, n_censL_D, pos_censL_D, y_impute_censL);
-  y_merge = missings_and_censoring(y_merge, n_censR_D, pos_censR_D, y_impute_censR);
-
+ if (n_miss > 0){
+      y_merge = missings_and_censoring(y_merge, n_miss_D, pos_miss_D, y_impute);
+  }
+  if (n_censL > 0){
+    y_merge = missings_and_censoring(y_merge, n_censL_D, pos_censL_D, y_impute_censL);
+  }
+  if (n_censR > 0){
+     y_merge = missings_and_censoring(y_merge, n_censR_D, pos_censR_D, y_impute_censR);
+  }
 
   // (Hyper-)Priors
   priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, prior_LKJ,
