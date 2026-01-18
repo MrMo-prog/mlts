@@ -5,6 +5,7 @@ functions{
   #include "functions/function_outcome_prediction.stan"
   #include "functions/function_calculate_bmu.stan"
   #include "functions/function_calculate_b.stan"
+  #include "functions/function_calculate_mus.stan"
 }
 data {
   int<lower=1> N; 	// number of observational units
@@ -101,6 +102,12 @@ array[G,max(N_G)] int g_id_pos; // index group by G*N_G array
   array[D] int<lower=0,upper=D> D_cen_pos;
 }
 
+transformed data{
+  // dummy variables for calculate_mus function
+  array[D] int dummy_D_np = rep_array(0, D);
+  array[0] vector[D] dummy_YB;
+  array[D] int dummy_D_pos_is_SI = rep_array(0, D);
+}
 
 parameters {
   array[N] vector[n_random] b_free;      // person-specific parameter
@@ -215,37 +222,16 @@ model {
       }
     }
 
+    mus = calculate_mus(
+            y_cen,              // x_dyn (here: y_cen)
+            0,                  // is_latent = 0 (Manifest)
+            0,                  // is_covs_fix = 0 (Manifest Covs)
+            pp, obs_id, maxLag, D, D_cen, is_wcen, D_cen_pos, N_pred, D_pred,
+            Lag_pred, D_pred2, Lag_pred2, Dpos1, Dpos2, b, n_inno_covs,
+            inno_cov_load, eta_cov_id, dummy_D_np, dummy_D_pos_is_SI, dummy_YB);
+
     for(d in 1:D){ // start loop over dimensions
-
       if(is_wcen[d] == 1){
-
-      // build prediction matrix for specific dimensions
-      int n_cols; // matrix dimensions
-      n_cols = (n_inno_covs>0 && d<3) ? N_pred[d]+n_inno_covs : N_pred[d];
-
-      {
-      matrix[(obs_id-maxLag),n_cols] b_mat;
-      vector[n_cols] b_use;
-      for(nd in 1:N_pred[d]){ // start loop over number of predictors in each dimension
-         int lag_use = Lag_pred[d,nd];
-         if(D_pred2[d,nd] == -99){
-          b_mat[,nd] = y_cen[D_pred[d, nd],(1+maxLag-lag_use):(obs_id-lag_use)];
-         } else {
-          int lag_use2 = Lag_pred2[d,nd];
-          b_mat[,nd] = y_cen[D_pred[d, nd],(1+maxLag-lag_use):(obs_id-lag_use)] .*
-                       y_cen[D_pred2[d, nd],(1+maxLag-lag_use2):(obs_id-lag_use2)];
-         }
-      }
-      b_use[1:N_pred[d]] = to_vector(b[pp, Dpos1[d]:Dpos2[d]]);
-
-      if(n_inno_covs>0 && d < 3){  // add latent factor scores
-         b_mat[,(N_pred[d]+1)] = eta_cov_id[1,]; // add innovation covariance factor scores
-         b_use[N_pred[d]+1] = inno_cov_load[d];
-         }
-
-        mus[D_cen_pos[d],] = b[pp,D_cen_pos[d]] + b_mat * b_use;
-        }
-
         // sampling statement
         target += normal_lpdf(y_merge[d,(pos+maxLag):(pos+(obs_id-1))] | mus[D_cen_pos[d],], sd_noise[D_cen_pos[d],pp]);
        }
@@ -268,4 +254,3 @@ generated quantities{
       bcorr[g] = multiply_lower_tri_self_transpose(L[g]);
     }
 }
-

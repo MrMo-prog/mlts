@@ -5,6 +5,7 @@ functions{
   #include "functions/function_outcome_prediction.stan"
   #include "functions/function_calculate_bmu.stan"
   #include "functions/function_calculate_b.stan"
+  #include "functions/function_calculate_mus.stan"
 }
 data {
   int<lower=1> N; 	// number of observational units
@@ -97,6 +98,14 @@ data {
   array[D] int<lower=0,upper=D> D_cen_pos;
 }
 
+transformed data{
+  // dummy variables for calculate_mus function
+  array[D] int dummy_inno_cov_load = rep_array(0, D);
+  array[0] vector[N] dummy_eta_cov_id;
+  array[D] int dummy_D_np = rep_array(0, D);
+  array[0] vector[D] dummy_YB;
+  array[D] int dummy_D_pos_is_SI = rep_array(0, D);
+}
 
 parameters {
   array[N] vector[n_random] b_free;            // person-specific parameter
@@ -195,27 +204,24 @@ model {
       }
     }
 
-    for(d in 1:D){ // start loop over dimensions
+     mus = calculate_mus(
+            y_cen,            // x_dyn (here: etaW_id)
+            0,                  // is_latent = 1 (latent)
+            1,                  // is_covs_fix = 1 (Manifest Covs)
+            pp, obs_id, maxLag, D, D_cen, is_wcen, D_cen_pos, N_pred, D_pred,
+            Lag_pred, D_pred2, Lag_pred2, Dpos1, Dpos2, b, 0,
+            dummy_inno_cov_load, dummy_eta_cov_id, dummy_D_np,
+            dummy_D_pos_is_SI, dummy_YB);
 
+    for(d in 1:D){
       if(is_wcen[d] == 1){
+         // Wir holen den relevanten Zeit-Abschnitt aus y_cen
+         vector[obs_id-maxLag] temp_seg = segment(y_cen[d], (1+maxLag), (obs_id-maxLag));
 
-      // build prediction matrix for specific dimensions
-      matrix[(obs_id-maxLag),N_pred[d]] b_mat; // adjust for non-fully crossed models
-
-      for(nd in 1:N_pred[d]){ // start loop over number of predictors in each dimension
-          int lag_use = Lag_pred[d,nd];
-          if(D_pred2[d,nd] == -99){
-            b_mat[,nd] = y_cen[D_pred[d, nd],(1+maxLag-lag_use):(obs_id-lag_use)];
-          } else {
-            int lag_use2 = Lag_pred2[d,nd];
-            b_mat[,nd] = y_cen[D_pred [d,nd],(1+maxLag-lag_use ):(obs_id-lag_use)] .*
-                         y_cen[D_pred2[d,nd],(1+maxLag-lag_use2):(obs_id-lag_use2)];
-          }
-      }
-
-      // use build predictor matrix to calculate latent time-series means
-      mus[,D_cen_pos[d]] =  to_array_1d(b[pp,D_cen_pos[d]] + b_mat * to_vector(b[pp, Dpos1[d]:Dpos2[d]]));
-      y_use[,D_cen_pos[d]] = to_array_1d(segment(y_merge[d,], (pos+maxLag), (obs_id-maxLag)));
+         // Und packen ihn transponiert in y_use (Zeit x Dimension)
+         for(t in 1:(obs_id-maxLag)){
+            y_use[t, D_cen_pos[d]] = temp_seg[t];
+         }
       }
     }
 

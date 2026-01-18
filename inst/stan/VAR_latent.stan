@@ -5,6 +5,7 @@ functions{
   #include "functions/function_outcome_prediction.stan"
   #include "functions/function_calculate_bmu.stan"
   #include "functions/function_calculate_b.stan"
+  #include "functions/function_calculate_mus.stan"
 }
 data {
   int<lower=1> N; 	        // number of observational units
@@ -295,37 +296,20 @@ model {
           }
       }
 
+    mus = calculate_mus(
+            etaW_id,            // x_dyn (here: etaW_id)
+            1,                  // is_latent = 0 (latent)
+            0,                  // is_covs_fix = 0 (Manifest Covs)
+            pp, obs_id, maxLag, D, D_cen, is_wcen, D_cen_pos, N_pred, D_pred,
+            Lag_pred, D_pred2, Lag_pred2, Dpos1, Dpos2, b, n_inno_covs,
+            inno_cov_load, eta_cov_id, D_np, D_pos_is_SI, YB);
+
     for(d in 1:D){ // start loop over dimensions
       if(is_wcen[d] == 1){
-
-      // build prediction matrix for specific dimensions
-      int n_cols = (n_inno_covs>0 && d<3) ? N_pred[d]+n_inno_covs : N_pred[d];
-      matrix[(obs_id-maxLag),n_cols] b_mat;
-      vector[n_cols] b_use;
-      b_use[1:N_pred[d]] = to_vector(b[pp, Dpos1[d]:Dpos2[d]]);
-
-      for(nd in 1:N_pred[d]){ // start loop over number of predictors in each dimension
-        int lag_use = Lag_pred[d,nd];
-        if(D_pred2[d,nd] == -99){
-          b_mat[,nd] = etaW_id[D_pred[d, nd],(1+maxLag-lag_use):(obs_id-lag_use)];
-          } else {
-           int lag_use2 = Lag_pred2[d,nd];
-           b_mat[,nd] = etaW_id[D_pred[d, nd],(1+maxLag-lag_use):(obs_id-lag_use)] .*
-                        etaW_id[D_pred2[d, nd],(1+maxLag-lag_use2):(obs_id-lag_use2)];
-        }
-      }
-
-      if(n_inno_covs>0&&d<3){
-         b_use[N_pred[d]+1] = inno_cov_load[d];
-         b_mat[,(N_pred[d]+1)] = eta_cov_id[1,]; // add innovation covariance factor scores
-        }
-
       // use build predictor matrix to calculate latent time-series means
       if(D_np[d] == 1){
-        mus[D_cen_pos[d],] =  YB[D_pos_is_SI[d],pp] + b_mat * b_use;
         target += normal_lpdf(y_merge[D_pos_is_SI[d],(pos+maxLag):(pos+(obs_id-1))] | mus[D_cen_pos[d],], sd_noise[D_cen_pos[d],pp]);
       } else {
-        mus[D_cen_pos[d],] = b_mat * b_use;
         target += normal_lpdf(etaW_id[d,(1+maxLag):obs_id] | mus[D_cen_pos[d],], sd_noise[D_cen_pos[d],pp]);
         }
       }

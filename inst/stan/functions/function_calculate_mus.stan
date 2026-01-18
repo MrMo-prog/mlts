@@ -1,10 +1,7 @@
-matrix calculate_mu(
+array[] vector calculate_mus(
   array[] vector x_dyn, // y_cen oder etaW_id
   int is_latent, // 1=latent, 0=manifest,
-  int is_covs_fix,
-  array[] vector x_dyn,
-  int is_latent,
-  int is_covs_fix,
+  int is_covs_fix, // 0=nein, 1=covs_fix
 
   // indices / sizes
   int pp,
@@ -30,24 +27,24 @@ matrix calculate_mu(
   // innovation cov --> dummy code for covsfix models
   int n_inno_covs,
   array[] int inno_cov_load,
-  matrix eta_cov_id,
+  array[] vector eta_cov_id,
 
   // latent SI intercept helpers --> dummy code for manifest models and latent covsfix
   array[] int D_np,
   array[] int D_pos_is_SI,
-  matrix YB){ // 0=nein, 1=covs_fix
+  array[] vector YB){
 
-  matrix[obs_id - maxLag, D_cen] mus;
+  int T = obs_id - maxLag;
+  matrix[T, D_cen] mus;
 
   for(d in 1:D){ // start loop over dimensions
 
       if(is_wcen[d] == 1){
 
-      // build prediction matrix for specific dimensions
-      int n_cols; // matrix dimensions
-      n_cols = N_pred[d];
-      matrix[(obs_id-maxLag),n_cols] b_mat;
-      vector[n_cols] b_use;
+        // build prediction matrix for specific dimensions
+        int n_cols = N_pred[d];  // matrix dimensions
+        matrix[(T),n_cols] b_mat;
+        vector[n_cols] b_use;
 
       for(nd in 1:N_pred[d]){ // start loop over number of predictors in each dimension
          int lag_use = Lag_pred[d,nd];
@@ -60,7 +57,7 @@ matrix calculate_mu(
          }
       }
       b_use[1:N_pred[d]] = to_vector(b[pp, Dpos1[d]:Dpos2[d]]);
-      vector[obs_id -maxLag] b_calculated;
+      vector[T] b_calculated;
       // manifest
       if (is_latent == 0){
         b_calculated = b[pp,D_cen_pos[d]] + b_mat * b_use;
@@ -71,7 +68,7 @@ matrix calculate_mu(
       }
       // innocov dazu addieren, wenn =! covsfix
       if (is_covs_fix == 0 && n_inno_covs > 0 && d < 3){ // !!!hardcode --> nur 1 cov erlaubt
-        b_calculated += inno_cov_load[d] * eta_cov_id[1,]; // !!!hardcode --> nur 1 cov erlaubt
+        b_calculated += inno_cov_load[d] * eta_cov_id[1]; // !!!hardcode --> nur 1 cov erlaubt
       }
       //
       if ((D_np[d] == 1) && is_latent == 1 && is_covs_fix == 0){
@@ -80,5 +77,15 @@ matrix calculate_mu(
       mus[, D_cen_pos[d]] = b_calculated;
     }
   }
-  return mus;
+  if (is_covs_fix == 1){
+    array[T] vector[D_cen] out;
+    for (t in 1:T) out[t] = mus[t]';
+    return out;
+
+  } else {
+      array[D_cen] vector[T] out;
+      for (d in 1:D_cen) out[d] = col(mus, d);
+      return out;
+  }
 }
+
