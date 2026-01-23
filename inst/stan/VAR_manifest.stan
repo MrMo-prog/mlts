@@ -6,6 +6,7 @@ functions{
   #include "functions/function_calculate_bmu.stan"
   #include "functions/function_calculate_b.stan"
   #include "functions/function_calculate_mus.stan"
+  #include "functions/threading/manifest_partial_sum.stan"
 }
 data {
   int<lower=1> N; 	// number of observational units
@@ -107,6 +108,29 @@ transformed data{
   array[D] int dummy_D_np = rep_array(0, D);
   array[0] vector[D] dummy_YB;
   array[D] int dummy_D_pos_is_SI = rep_array(0, D);
+
+  // creating pos and pos_cov for partial_sum
+  array[N] int pos_start;
+  array[N] int pos_end;
+  array[N] int pos_cov_start;
+  array[N] int pos_cov_end;
+  array[N] int seq_N;
+  int pos = 1;
+  int pos_cov = 1;
+  int obs_id;
+
+  for (n in 1:N){
+    seq_N[n] = n;
+    obs_id = (N_obs_id[n]);
+
+    pos_start[n] = pos;
+    pos_end[n] = pos + obs_id -1;
+    pos_cov_start[n] = pos_cov;
+    pos_cov_end[n] = pos_cov + obs_id - maxLag -1;
+
+    pos = pos + obs_id;
+    pos_cov = pos_cov + obs_id - maxLag;
+  }
 }
 
 parameters {
@@ -157,11 +181,9 @@ transformed parameters {
  }
 
 model {
-  int pos = 1;       // initialize position indicator
-  int pos_cov = 1;   // covariance position
-  int obs_id = 1;    // declare local variable to store variable number of obs per person
   array[D] vector[N_obs] y_merge;
   array[G] matrix[n_random, n_random] SIGMA;
+  int grainsize = 1;
 
   for(g in 1:G){
     SIGMA[g] = diag_pre_multiply(sd_R[g,], L[g,]);
@@ -186,61 +208,17 @@ model {
                       b_out_pred, prior_b_out, sigma_out, prior_sigma_out,
                       n_fixed, b_fix, prior_b_fix);
 
-  for (pp in 1:N) {
-    // store number of observations per person
-    obs_id = (N_obs_id[pp]);
-    // obtain group
-    int pp_g = g_id[pp];
-
-    // individual parameters from (multivariate) normal distribution
-    if(n_random == 1){
-      target += normal_lpdf(b_free[pp,1] | bmu[pp,1], sd_R[pp_g, 1]);
-    } else {
-      target += multi_normal_cholesky_lpdf(b_free[pp, 1:n_random] | bmu[pp, 1 : n_random], SIGMA[pp_g]);
-    }
-
-    array[n_inno_covs] vector[obs_id-maxLag] eta_cov_id;
-    if(n_inno_covs>0){
-      for(i in 1:n_inno_covs){
-          eta_cov_id[i,] = segment(eta_cov[i,], pos_cov, (obs_id-maxLag));
-          target += normal_lpdf(eta_cov_id[i,] | 0, sd_inncov[i,pp]);
-      }
-    }
-
-    // local variable declaration: array of predicted values
-    {
-    array[D_cen] vector[obs_id-maxLag] mus;
-
-    // create latent mean centered versions of observations
-    array[D] vector[obs_id] y_cen;
-
-    for(d in 1:D){ // start loop over dimensions
-      if(is_wcen[d] == 1){
-        y_cen[d,] = y_merge[d,pos:(pos+obs_id-1)] - b[pp,D_cen_pos[d]];
-      } else {
-        y_cen[d,] = y_merge[d,pos:(pos+obs_id-1)];
-      }
-    }
-
-    mus = calculate_mus(
-            y_cen,              // x_dyn (here: y_cen)
-            0,                  // is_latent = 0 (Manifest)
-            0,                  // is_covs_fix = 0 (Manifest Covs)
-            pp, obs_id, maxLag, D, D_cen, is_wcen, D_cen_pos, N_pred, D_pred,
-            Lag_pred, D_pred2, Lag_pred2, Dpos1, Dpos2, b, n_inno_covs,
-            inno_cov_load, eta_cov_id, dummy_D_np, dummy_D_pos_is_SI, dummy_YB);
-
-    for(d in 1:D){ // start loop over dimensions
-      if(is_wcen[d] == 1){
-        // sampling statement
-        target += normal_lpdf(y_merge[d,(pos+maxLag):(pos+(obs_id-1))] | mus[D_cen_pos[d],], sd_noise[D_cen_pos[d],pp]);
-       }
-      }
-    }
-    // update index variables
-    pos = pos + obs_id;
-    pos_cov = pos_cov + obs_id - maxLag;
-  } // end loop over subjects
+  target += reduce_sum(
+        partial_sum_manifest,
+        seq_N,                // slicing array
+        grainsize,            // persons for each core (automatially done in reduce_dum)
+        N, N_obs_id, g_id, maxLag, D, D_cen, n_random, n_inno_covs,
+        y_merge, bmu, sd_R, SIGMA, b_free, b, eta_cov, sd_inncov, sd_noise,
+        is_wcen, D_cen_pos, N_pred, D_pred, Lag_pred, D_pred2, Lag_pred2,
+        Dpos1, Dpos2, inno_cov_load,
+        dummy_D_np, dummy_D_pos_is_SI, dummy_YB,
+        pos_start, pos_cov_start
+    );
 
   // outcome prediction: get expectations of outcome values
   outcome_prediction_lp(n_out, G, n_random, n_z, N_G, g_id_pos, n_out_bs,
