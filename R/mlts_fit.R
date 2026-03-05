@@ -136,6 +136,7 @@ mlts_fit <- function(model,
                      fit_model = TRUE,
                      print_message = TRUE,
                      print_warning = TRUE,
+                     threads_per_chain = 1,
                      ...
 ){
 
@@ -345,9 +346,22 @@ mlts_fit <- function(model,
     }
 
     if(standata$n_inno_cors == 0){
-      if(fit_model==T){
+      if(threads_per_chain > 1){
+        model_to_use <- stanmodels$VAR_manifest
+        # save prior user settings and readjust settings when exiting function
+        old_threads <- rstan::rstan_options("threads_per_chain")
+        on.exit(rstan::rstan_options(threads_per_chain = old_threads), add = TRUE)
+
+        rstan::rstan_options(threads_per_chain = threads_per_chain)
+        m_code <- model_to_use@model_code
+        # recompile model
+        model_to_use <- rstan::stan_model(model_code = m_code)
+      } else {
+        model_to_use <- stanmodels$VAR_manifest
+      }
+      if(fit_model==TRUE){
         stanfit <- rstan::sampling(
-          stanmodels$VAR_manifest,
+          model_to_use,
           data = standata,
           pars = pars,
           iter = iter,
@@ -362,7 +376,7 @@ mlts_fit <- function(model,
       pars = c(pars,"bcorr_inn")
       if(fit_model==T){
         stanfit <- rstan::sampling(
-          stanmodels$VAR_manifestCovsFix,
+          stanmodels$VAR_latentCovsFix,
           data = standata,
           pars = pars,
           iter = iter,

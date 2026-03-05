@@ -205,8 +205,8 @@ model {
     }
 
      mus = calculate_mus(
-            y_cen,            // x_dyn (here: etaW_id)
-            0,                  // is_latent = 1 (latent)
+            y_cen,            // x_dyn (here: y_cen)
+            0,                  // is_latent = 0 (latent)
             1,                  // is_covs_fix = 1 (Manifest Covs)
             pp, obs_id, maxLag, D, D_cen, is_wcen, D_cen_pos, N_pred, D_pred,
             Lag_pred, D_pred2, Lag_pred2, Dpos1, Dpos2, b, 0,
@@ -215,10 +215,8 @@ model {
 
     for(d in 1:D){
       if(is_wcen[d] == 1){
-         // Wir holen den relevanten Zeit-Abschnitt aus y_cen
-         vector[obs_id-maxLag] temp_seg = segment(y_cen[d], (1+maxLag), (obs_id-maxLag));
+         vector[obs_id-maxLag] temp_seg = segment(y_merge[d], (pos+maxLag), (obs_id-maxLag));
 
-         // Und packen ihn transponiert in y_use (Zeit x Dimension)
          for(t in 1:(obs_id-maxLag)){
             y_use[t, D_cen_pos[d]] = temp_seg[t];
          }
