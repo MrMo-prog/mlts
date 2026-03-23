@@ -1,10 +1,9 @@
-// autoregressive DSEM with manifest variables
 functions{
-  #include "functions/function_calculate_b.stan"
-  #include "functions/function_missings_and_censoring.stan"
-  #include "functions/function_hyper_priors.stan"
-  #include "functions/function_outcome_prediction.stan"
-  #include "functions/function_calculate_bmu.stan"
+  #include "../stan/functions/threading/partial_sum.stan"
+  #include "../stan/functions/function_calculate_b.stan"
+  #include "../stan/functions/function_hyper_priors.stan"
+  #include "../stan/functions/function_calculate_bmu.stan"
+  #include "../stan/functions/function_outcome_prediction.stan"
 }
 
 data {
@@ -50,7 +49,6 @@ data {
   array[D, max(N_pred)] int<lower=0> Lag_pred; // matrix to index lag of used predictors
   array[D] int Dpos1;  // index positions of dynamic effect parameters
   array[D] int Dpos2;
-  int n_int;
   array[D,max(N_pred)] int D_pred2;    // matrix to index predictors to use per dimension
   array[D,max(N_pred)] int Lag_pred2;  // matrix to index lag of used predictors
 
@@ -61,7 +59,7 @@ data {
   array[n_cov_bs, 2] int n_cov_mat;
   matrix[N, n_cov] W;  // predictors of individual parameters
 
-    // outcome prediction
+  // outcome prediction
   int n_out;                 // number of outcome variables
   array[n_out,1] int n_out_bs;     // number of predictors per outcome
   int n_out_bs_max;          // number of predictors per outcome
@@ -76,14 +74,14 @@ data {
   array[N] int g_id; // group index per cluster
   array[G, max(N_G)] int g_id_pos; // cluster (person) indexes by group
 
-  // priors
+    // priors
   matrix[n_random,2] prior_gamma;
   matrix[n_random,2] prior_sd_R;
   real prior_LKJ;
   matrix[n_fixed,2] prior_b_fix;
-  //  matrix[n_fixed,2] prior_b_fix_diff;
+//  matrix[n_fixed,2] prior_b_fix_diff;
   matrix[n_innos_fix,2] prior_sigma;
-  //  matrix[n_innos_fix,2] prior_sigma_diff;
+//  matrix[n_innos_fix,2] prior_sigma_diff;
   matrix[n_cov_bs,2] prior_b_re_pred;
   matrix[n_out,2] prior_alpha_out;
   matrix[n_out_bs_sum,2] prior_b_out;
@@ -97,6 +95,7 @@ data {
 
   array[D] int<lower=0,upper=1> is_wcen;   // parameter should be within centered = 1; should not = 0
   array[D] int<lower=0,upper=D> D_cen_pos; // pos of parameters that should be centered
+  int<lower=1> grainsize;
 }
 
 transformed data{
@@ -113,16 +112,87 @@ transformed data{
 
   for (n in 1:N){
     seq_N[n] = n;
-    obs_id_temp = (N_obs_id[n]);
+    obs_id_temp = N_obs_id[n];
     obs_id_temp_cov = N_obs_id[n] - maxLag;
 
     pos_start[n] = pos;
-    pos_end[n] = pos + obs_id_temp -1;
     pos_start_cov[n] = pos_cov;
-    pos_end_cov[n] = pos_cov + obs_id_temp_cov -1;
+    pos_end[n] = pos + obs_id_temp -1;
+    pos_end_cov[n] = pos_cov + obs_id_temp_cov - 1;
 
     pos = pos + obs_id_temp;
     pos_cov = pos_cov + obs_id_temp_cov;
+  }
+
+  // creating positioning for missings in partial sum
+  array[N, D] int pos_start_miss = rep_array(0, N, D);  //starting position for each person and each dimension in y_impute
+  array[N, D] int pos_end_miss = rep_array(0, N, D);    //ending postion
+  array[N, D] int seq_N_miss = rep_array(0, N, D);      //number of missing values for each person and each dimension
+
+  array[N, D] int pos_start_censL = rep_array(0, N, D);
+  array[N, D] int pos_end_censL = rep_array(0, N, D);
+  array[N, D] int seq_N_censL = rep_array(0, N, D);
+
+  array[N, D] int pos_start_censR = rep_array(0, N, D);
+  array[N, D] int pos_end_censR = rep_array(0, N, D);
+  array[N, D] int seq_N_censR = rep_array(0, N, D);
+
+  int impute_pos = 0;
+  int impute_pos_censL = 0;
+  int impute_pos_censR = 0;
+
+  for (d in 1:D){
+    for (n in 1:N){
+      int counter = 0;
+      int end_pos = 0;
+      int counter_censL = 0;
+      int end_pos_censL = 0;
+      int counter_censR = 0;
+      int end_pos_censR = 0;
+
+      for (x in 1: n_miss_D[d]){
+        if (pos_miss_D[d, x] >= pos_start[n] && pos_miss_D[d, x] <= pos_end[n]){
+          if (counter == 0){
+            pos_start_miss[n, d] = impute_pos + x;
+          }
+          counter = counter + 1;
+          end_pos = x;
+        }
+      }
+      for (x in 1:n_censL_D[d]){
+        if (pos_censL_D[d, x] >= pos_start[n] && pos_censL_D[d,x] <= pos_end[n]){
+          if(counter_censL == 0){
+            pos_start_censL[n, d] = impute_pos_censL + x;
+          }
+          counter_censL = counter_censL + 1;
+          end_pos_censL = x;
+        }
+      }
+      for (x in 1:n_censR_D[d]){
+        if (pos_censR_D[d, x] >= pos_start[n] && pos_censR_D[d,x] <= pos_end[n]){
+          if(counter_censR == 0){
+            pos_start_censR[n, d] = impute_pos_censR + x;
+          }
+          counter_censR = counter_censR + 1;
+          end_pos_censR = x;
+        }
+      }
+      if (counter > 0){
+        pos_end_miss[n, d] = impute_pos + end_pos;
+      }
+      if (counter_censL > 0){
+        pos_end_censL[n, d] = impute_pos_censL + end_pos_censL;
+      }
+      if (counter_censR > 0){
+        pos_end_censR[n, d] = impute_pos_censR + end_pos_censR;
+      }
+      seq_N_miss[n, d] = counter;
+      seq_N_censL[n, d] = counter_censL;
+      seq_N_censR[n, d]  = counter_censR;
+    }
+    impute_pos = impute_pos + n_miss_D[d];
+    impute_pos_censL = impute_pos_censL + n_censL_D[d];
+    impute_pos_censR = impute_pos_censR + n_censR_D[d];
   }
 }
 
@@ -140,7 +210,7 @@ parameters {
   vector[n_miss] y_impute;                        // vector to store imputed values
   array[n_inno_covs] vector[n_obs_cov] eta_cov;
   vector<upper=censL_val>[n_censL] y_impute_censL;
-  vector<upper=censR_val>[n_censR] y_impute_censR;
+  vector<lower=censR_val>[n_censR] y_impute_censR;
 }
 
 transformed parameters{
@@ -153,9 +223,9 @@ transformed parameters{
   b = calculate_b(N, n_pars, n_random, is_random, b_free, n_fixed, G, g_id_pos,
   N_G, b_fix, is_fixed);
 
-
   bmu = calculate_bmu(G, N, n_random, gammas, n_cov, n_cov_bs, n_cov_mat, b_re_pred,
                      g_id_pos, W, N_G);
+
 
   for(d in 1:D_cen){
       if (innos_rand[d] == 0){
@@ -169,115 +239,51 @@ transformed parameters{
   }
   // transform log innovation covarainces
   if(n_inno_covs > 0){
-      for(i in 1:n_inno_covs){
-        sd_inncov[i,1:N] = sqrt(exp(to_vector(b[,inno_cov_pos[1,i]])));
-      }
+    for(i in 1:n_inno_covs){
+      sd_inncov[i,1:N] = sqrt(exp(to_vector(b[,inno_cov_pos[1,i]])));
     }
- }
+  }
+}
 
 
 model {
-  array[D] vector[N_obs] y_merge;
+
   array[G] matrix[n_random, n_random] SIGMA;
 
   for(g in 1:G){
     SIGMA[g] = diag_pre_multiply(sd_R[g], L[g]); // covariance matrix of parameters by group
   }
 
-  y_merge = y;
-  if (n_miss > 0){
-    y_merge = missings_and_censoring(y_merge, n_miss_D, pos_miss_D, y_impute);
-  }
-  if (n_censL > 0){
-    y_merge = missings_and_censoring(y_merge, n_censL_D, pos_censL_D, y_impute_censL);
-  }
-  if (n_censR > 0){
-    y_merge = missings_and_censoring(y_merge, n_censR_D, pos_censR_D, y_impute_censR);
-  }
-
   // (Hyper-)Priors
   priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, prior_LKJ, sigma,
-  n_innos_fix, prior_sigma, n_cov, b_re_pred, prior_b_re_pred, n_out, alpha_out,
-  prior_alpha_out, b_out_pred, prior_b_out, sigma_out, prior_sigma_out, n_fixed, b_fix, prior_b_fix);
+  n_innos_fix, prior_sigma, n_cov, b_re_pred, prior_b_re_pred, n_out, alpha_out, prior_alpha_out,
+  b_out_pred, prior_b_out, sigma_out, prior_sigma_out, n_fixed, b_fix, prior_b_fix);
 
-  for(pp in 1:N){
-      int obs_id = N_obs_id[pp]; // observations per person
-      int gg_p = g_id[pp];       // group
+  target += reduce_sum(
+    partial_sum_log_lik,
+    seq_N,
+    grainsize,
+    N_obs_id, g_id, b_free, gammas, SIGMA, D_cen, maxLag, D,
+    is_wcen, y, pos_start, pos_end, pos_start_cov, pos_end_cov, b, D_cen_pos, N_pred,
+    Lag_pred, D_pred, D_pred2, Lag_pred2, Dpos1, Dpos2, sd_noise, n_miss, n_miss_D,
+    pos_miss_D, y_impute, pos_start_miss, pos_end_miss, seq_N_miss, n_censL,
+    n_censL_D, pos_censL_D, y_impute_censL, pos_start_censL, pos_end_censL,
+    seq_N_censL, n_censR, n_censR_D, pos_censR_D, y_impute_censR, pos_start_censR,
+    pos_end_censR, seq_N_censR, n_inno_covs, eta_cov, inno_cov_load, bmu, sd_R, sd_inncov, n_random
+  );
 
-      // level 2 prediction
-      if (n_random == 1){
-        target += normal_lpdf(b_free[pp, 1] | bmu[pp, 1], sd_R[gg_p, 1]);
-      } else{
-        target += multi_normal_cholesky_lpdf(b_free[pp, 1:n_random] | bmu[pp, 1:n_random], SIGMA[gg_p]);
-      }
-
-      array[n_inno_covs] vector[obs_id-maxLag] eta_cov_id;
-      if (n_inno_covs > 0){
-        for (i in 1:n_inno_covs){
-          eta_cov_id[i, ] = eta_cov[i, pos_start_cov[pp] : pos_end_cov[pp]];
-          target += normal_lpdf(eta_cov_id[i, ] | 0, sd_inncov[i, pp]);
-        }
-      }
-      {
-      // array of predicted values
-      array[D_cen] vector[obs_id-maxLag] mus;
-      // create latent mean centered versions of observations
-      array[D] vector[N_obs_id[pp]] y_cen;
-
-      // calculating y_cen --> array vector of within centered observations
-      for(d in 1:D){
-        if(is_wcen[d] == 1){
-          y_cen[d] = y_merge[d, pos_start[pp]: pos_end[pp]] - b[pp, D_cen_pos[d]];
-        } else {
-          y_cen[d] = y_merge[d, pos_start[pp]: pos_end[pp]];
-        }
-      }
-
-      for(d in 1:D){
-
-        if(is_wcen[d] == 1){
-          // build prediction matrix for specific dimensions
-          int n_cols; // matrix dimensions
-          n_cols = (n_inno_covs>0 && d<3)? N_pred[d] + n_inno_covs : N_pred[d];
-          {
-            matrix[obs_id - maxLag, n_cols] b_mat; // dimension specific prediction matrix: time points * predictors
-            vector[n_cols] b_use; //
-            for(nd in 1:N_pred[d]){ // AR effect and CL effects
-              int lag_use = Lag_pred[d, nd];
-              if(D_pred2[d, nd] == -99){
-                b_mat[,nd] = y_cen[D_pred[d, nd], (1+maxLag-lag_use):(obs_id-lag_use)];
-              } else { // interactions between two ds
-                int lag_use2 = Lag_pred2[d, nd];
-                b_mat[,nd] = y_cen[D_pred[d, nd], (1+maxLag-lag_use):(obs_id-lag_use)] .*
-                             y_cen[D_pred2[d, nd], (1+maxLag-lag_use2):(obs_id-lag_use2)];
-              }
-            }
-            b_use[1:N_pred[d]] = to_vector(b[pp, Dpos1[d]:Dpos2[d]]);
-
-            if(n_inno_covs>0 && d < 3){  // add latent factor scores
-              b_mat[,(N_pred[d]+1)] = eta_cov_id[1,]; // add innovation covariance factor scores
-              b_use[N_pred[d]+1] = inno_cov_load[d];
-            }
-
-            mus[D_cen_pos[d]] = b_mat * b_use;
-          }
-          target += normal_lpdf(y_cen[d, (1+maxLag):obs_id] | mus[D_cen_pos[d]], sd_noise[D_cen_pos[d],pp]);
-        }
-      } // end of loop over dimensions
-
-    } // end of local calculations
-
-  } // end of loop over subjects
 
   // outcome prediction: get expectations of outcome values
   outcome_prediction_lp(n_out, G, n_random, n_z, N_G, g_id_pos, n_out_bs,
                         n_out_b_pos, b, Z, out, alpha_out, b_out_pred, sigma_out,
                         is_random);
+
 }
 
 generated quantities{
   array[G] matrix[n_random,n_random] bcorr; // random coefficients correlation matrix
-  for(g in 1:G){
-      bcorr[g] = multiply_lower_tri_self_transpose(L[g]);
-    }
+    for(g in 1:G){
+        bcorr[g] = multiply_lower_tri_self_transpose(L[g]);
+      }
 }
+
