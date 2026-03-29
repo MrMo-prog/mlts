@@ -138,8 +138,10 @@ mlts_fit <- function(model,
                      print_warning = TRUE,
                      threads_per_chain = 1,
                      grainsize = 1,
+                     missings =c("inside", "outside"),
                      ...
 ){
+  missings <- match.arg(missings)
 
   # eval the model
   infos <- mlts_model_eval(model)
@@ -349,7 +351,11 @@ mlts_fit <- function(model,
     if(standata$n_inno_cors == 0){
       if(threads_per_chain > 1){
         # compile model
-        stan_file <- system.file("stan_raw", "VAR_manifest_threading.stan", package="mlts")
+        if (missings == "inside"){
+          stan_file <- system.file("stan_raw", "VAR_manifest_threading.stan", package="mlts")
+        } else if (missings == "outside"){
+          stan_file <- system.file("stan_raw", "VAR_manifest_threading_oldMissings.stan", package="mlts")
+        }
         model_to_use <- rstan::stan_model(file = stan_file)
         # set grainsize
         standata$grainsize = grainsize
