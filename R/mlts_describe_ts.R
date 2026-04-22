@@ -1,17 +1,23 @@
 #' Describe Time Series Variables by Group
 #'
 #' Computes descriptive statistics for one or more time-series variables,
-#' optionally within groups. For each variable (and group, if provided), the
-#' function returns sample size, number of complete observations, percentage of
-#' missing values, number of complete lag-1 pairs, central tendency, dispersion,
-#' skewness, kurtosis, and floor/ceiling effects.
+#' optionally within groups or for specific individuals. For each variable
+#' (and group/person, if provided), the function returns sample size, number of
+#' complete observations, percentage of missing values, number of complete lag-1
+#' pairs, central tendency, dispersion, skewness, kurtosis, floor/ceiling effects,
+#' and the global intraclass correlation (ICC).
 #'
 #' @param data A `data.frame` containing the time-series variables.
 #' @param ts A character vector of variable names (columns in \code{data})
 #'   representing the time-series to be summarized.
+#' @param id A character string specifying the subject or cluster identifier
+#'   column in \code{data}. This is required and used exclusively to calculate
+#'   the Intraclass Correlation Coefficient (ICC).
 #' @param group Optional. A character string giving the name of a grouping
-#'   variable in \code{data}. If \code{NULL} (default), all observations are
-#'   treated as belonging to one group.
+#'   variable in \code{data}. This determines the level of aggregation for the
+#'   output. If set to the person identifier (e.g., the same as \code{id}), the
+#'   function returns person-specific descriptive statistics. If \code{NULL}
+#'   (default), statistics are calculated globally across all observations.
 #' @param digits Integer indicating the number of decimal places to which numeric
 #'   statistics should be rounded. Default is 3.
 #' @param scale_min,scale_max Optional numeric values specifying the minimum and
@@ -45,10 +51,14 @@
 #' data form a single continuous time series, and lag-1 pairs may span across
 #' natural breaks in the data.
 #'
+#' The Intraclass Correlation Coefficient (ICC) is always computed globally
+#' for each time-series variable based on the \code{id} variable, representing
+#' the proportion of between-person variance.
+#'
 #' @return
-#' A `data.frame` with one row per variable per group, containing:
+#' A `data.frame` with one row per variable per group (or person), containing:
 #' \itemize{
-#'   \item \code{group} — group identifier (omitted if \code{group = NULL})
+#'   \item \code{group} — group/person identifier (omitted if \code{group = NULL})
 #'   \item \code{ts_var} — name of time series variable
 #'   \item \code{N} — total number of observations (including NAs)
 #'   \item \code{N_comp} — number of non-missing observations
@@ -63,19 +73,20 @@
 #'         \code{e1071::kurtosis} with the specified \code{kurt_type})
 #'   \item \code{floor_pc} — percent at \code{scale_min}
 #'   \item \code{ceiling_pc} — percent at \code{scale_max}
+#'   \item \code{icc_ts} — global intraclass correlation coefficient
 #' }
 #'
 #' @examples
 #' \dontrun{
-#' # Example with grouping
-#' describe_ts(data = df, ts = c("x", "y"), group = "id")
+#' # Example for person-specific descriptives
+#' mlts_describe_ts(data = df, ts = c("x", "y"), id = "person_id", group = "person_id")
 #'
-#' # Example without grouping
-#' describe_ts(data = df, ts = "x")
+#' # Example for global descriptives
+#' mlts_describe_ts(data = df, ts = "x", id = "person_id")
 #' }
 #'
 #' @export
-describe_ts <- function(data, ts, id, group = NULL, digits = 3, scale_min = NULL,
+mlts_describe_ts <- function(data, ts, id, group = NULL, digits = 3, scale_min = NULL,
                         scale_max = NULL, skew_type = 2, kurt_type = 2){
 
   if(!is.null(group)){

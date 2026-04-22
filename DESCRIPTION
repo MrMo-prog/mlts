@@ -38,7 +38,9 @@ Imports:
     shape,
     diagram,
     grDevices,
-    graphics
+    graphics,
+    HDInterval,
+    e1071
 Suggests: 
     knitr,
     testthat (>= 3.0.0)
