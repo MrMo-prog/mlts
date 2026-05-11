@@ -9,7 +9,7 @@ functions{
 }
 data {
   int<lower=1> N; 	        // number of observational units
-int<lower=1> G;   // number of groups
+  int<lower=1> G;   // number of groups
   int<lower=1> D;           // number of latent constructs
   int<lower=1> D_cen;
   array[D] int<lower=1> D_np;     // number of indicators per construct
@@ -17,7 +17,7 @@ int<lower=1> G;   // number of groups
   array[n_p] int D_perP;          // indicate dimension per indicator
   array[n_p] int is_SI;           // indicate if single-indicator per construct
   array[D] int D_pos_is_SI;       // indicate position of single-indicator per construct
-  int<lower=1, upper=3> maxLag; // maximum lag
+  int<lower=0, upper=3> maxLag; // maximum lag
   int<lower=1> N_obs; 	    // observations in total: N * TP
   int<lower=1> n_pars;
   int<lower=D_cen> n_random;    // number of random effects
@@ -182,7 +182,7 @@ parameters {
 
 transformed parameters {
   matrix[N, n_random] bmu;     // gammas of person-specific parameters
-  matrix[N,n_pars] b;
+  matrix[N, n_pars-n_innos_fix] b;
   array[N] vector[D_cen] sd_noise;
 
 
@@ -220,7 +220,7 @@ model {
   int pos = 1;       // initialize position indicator
   int obs_id = 1;    // declare local variable to store variable number of obs per person
   array[n_p] vector[N_obs] y_merge;
-  array[sum(p_is_wcen)] vector[N_obs] Ymus;
+  array[max(p_is_wcen_pos)] vector[N_obs] Ymus;
   array[n_p] vector[N] YB;
   array[G] matrix[n_mvn1, n_mvn1] SIGMA;
   array[G] matrix[n_mvn2, n_mvn2] SIGMA2;

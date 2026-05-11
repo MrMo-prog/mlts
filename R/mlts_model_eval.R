@@ -17,6 +17,7 @@
 #'
 mlts_model_eval <- function(model){
 
+
   # read features of specified model
   ## Check if grouping was requested
   if(!is.null(model$group)){
@@ -28,17 +29,20 @@ mlts_model_eval <- function(model){
   }
 
   # extract included lag-order
-  isPHI = which(startsWith(model$Param, "phi("))
   isINT = which(startsWith(model$Param, "phi(i"))
+  isRDSEM = which(startsWith(model$Param, "phi(s"))
+  isPHI = which(startsWith(model$Param, "phi("))
+  isPHI = isPHI[!(isPHI %in% isRDSEM)]
   model$Lag = NA
   model$Lag[isPHI] = substr(model$Param[isPHI], 5, 5)
-
 
   # create additional columns
   ars = paste0("phi(",rep(1:3,each = 9),")_", 1:9, 1:9) # attention: max lag of 3 is hard-coded
   model$isAR = ifelse(model$Param %in% ars,1,0)
   model$isINT = ifelse(startsWith(model$Param,"phi(i"),1,0)
+  model$isRDSEM = ifelse(startsWith(model$Param,"phi(s"),1,0)
   n_int = sum(model$isINT)
+  n_rdsem = sum(model$isRDSEM)
 
   # check if measurement model is entered
   isLatent = nrow(model[model$Model == "Measurement",])
@@ -53,33 +57,44 @@ mlts_model_eval <- function(model){
   q = max(as.numeric(unlist(constructs)))   # number of (latent) constructs
   n_mus = sum(startsWith(fix_pars$Param_Label,prefix = "Trait"))
   fix_pars$no = 1:nrow(fix_pars)
-  fix_pars_dyn = fix_pars[fix_pars$Param_Label == "Dynamic",]
+  fix_pars_dyn = fix_pars[fix_pars$Param_Label == "Dynamic" & !startsWith(fix_pars$Param, "phi(s"),]
   n_dyn.pars = nrow(fix_pars_dyn)
-  n_int = sum(fix_pars_dyn$isINT)
+  fix_pars_rdsem = fix_pars[fix_pars$Param_Label == "Dynamic" & startsWith(fix_pars$Param, "phi(s"),]
+  n_rdsem.pars = nrow(fix_pars_rdsem)
+
   if(q < 10){  ### ACHTUNG AKTUELLE LÖSUNG FUNKTIONIERT NUR MIT D < 10
+    if(n_dyn.pars>0){
     fix_pars_dyn$Dout = -99
     fix_pars_dyn$Dpred = -99
     fix_pars_dyn$Dpred2 = -99
     fix_pars_dyn$Lag2 = -99
-    for(i in 1:n_dyn.pars){
-      if(fix_pars_dyn$isINT[i] == 0){
-        fix_pars_dyn$Dout[i] = substr(fix_pars_dyn$Param[i], start = 8, stop = 8)
-        fix_pars_dyn$Dpred[i] = substr(fix_pars_dyn$Param[i], start = 9, stop = 9)
-      } else {
-        fix_pars_dyn$Dout[i] = substr(fix_pars_dyn$Param[i], start = 8, stop = 8)
-        fix_pars_dyn$Dpred[i] = substr(fix_pars_dyn$Param[i], start = 10, stop = 10)
-        fix_pars_dyn$Lag[i] = substr(fix_pars_dyn$Param[i], start = 12, stop = 12)
-        fix_pars_dyn$Dpred2[i] = substr(fix_pars_dyn$Param[i], start = 14, stop = 14)
-        fix_pars_dyn$Lag2[i] = substr(fix_pars_dyn$Param[i], start = 16, stop = 16)
+      for(i in 1:n_dyn.pars){
+        if(fix_pars_dyn$isINT[i] == 0){
+          fix_pars_dyn$Dout[i] = substr(fix_pars_dyn$Param[i], start = 8, stop = 8)
+          fix_pars_dyn$Dpred[i] = substr(fix_pars_dyn$Param[i], start = 9, stop = 9)
+        } else {
+          fix_pars_dyn$Dout[i] = substr(fix_pars_dyn$Param[i], start = 8, stop = 8)
+          fix_pars_dyn$Dpred[i] = substr(fix_pars_dyn$Param[i], start = 10, stop = 10)
+          fix_pars_dyn$Lag[i] = substr(fix_pars_dyn$Param[i], start = 12, stop = 12)
+          fix_pars_dyn$Dpred2[i] = substr(fix_pars_dyn$Param[i], start = 14, stop = 14)
+          fix_pars_dyn$Lag2[i] = substr(fix_pars_dyn$Param[i], start = 16, stop = 16)
+        }
       }
     }
   }
 
-  # update q based on involved constructs in the dynamic effects
-  q <- as.integer(max(c(fix_pars_dyn$Dout,fix_pars_dyn$Dpred,fix_pars_dyn$Dpred2)))
+  # update q based on involved constructs in the dynamic effects and innovation variances
+  has_log.inno = which(paste0("ln.sigma2_",1:9) %in% fix_pars$Param)
+  has_inno = which(paste0("sigma_",1:9) %in% fix_pars$Param)
+  has_rDSEM = unlist(c(substr(fix_pars_rdsem$Param, start = 8, stop = 8),substr(fix_pars_rdsem$Param, start = 9, stop = 9)))
+  has_rDSEM = ifelse(length(has_rDSEM)==0, 0, max(has_rDSEM))
+  q <- as.integer(max(c(fix_pars_dyn$Dout, fix_pars_dyn$Dpred,
+                        fix_pars_dyn$Dpred2, has_rDSEM,
+                        ifelse(length(has_log.inno)>0,max(has_log.inno),0),
+                        ifelse(length(has_inno)>0,max(has_inno),0))))
 
 
-  maxLag = max(as.numeric(fix_pars_dyn$Lag), na.rm = TRUE)
+  maxLag = ifelse(n_dyn.pars==0, 0, max(c(as.numeric(fix_pars_dyn$Lag),as.numeric(fix_pars_dyn$Lag2)), na.rm = TRUE))
 
 
   # lagged relations between constructs
@@ -98,17 +113,47 @@ mlts_model_eval <- function(model){
       Lag_pred2[i,1:N_pred[i]] = as.integer(fix_pars_dyn$Lag2[fix_pars_dyn$Dout == i])
     }
       if(i == 1){
-          Dpos1[i] = n_mus+1
-          Dpos2[i] = n_mus+N_pred[i]
+          Dpos1[i] = n_mus+ n_rdsem.pars+1
+          Dpos2[i] = n_mus+ n_rdsem.pars+N_pred[i]
           } else {
             Dpos1[i] = Dpos2[i-1]+1
             Dpos2[i] = Dpos2[i-1]+N_pred[i]
           }
-      }
+  }
 
-  # based on N_pred check which construct is exogenous
+  # RDSEM paths
+  if(n_rdsem.pars > 0){
+    fix_pars_rdsem$Dout = -99
+    fix_pars_rdsem$Dpred = -99
+    for(i in 1:n_rdsem.pars){
+        fix_pars_rdsem$Dout[i]  = substr(fix_pars_rdsem$Param[i], start = 8, stop = 8)
+        fix_pars_rdsem$Dpred[i] = substr(fix_pars_rdsem$Param[i], start = 9, stop = 9)
+      }
+    is_rdsem     = sapply(1:q,function(x){ifelse(x %in% fix_pars_rdsem$Dout, 1, 0)})
+    N_pred_rdsem = sapply(1:q,function(x){sum(x == fix_pars_rdsem$Dout)})
+    D_pred_rdsem = matrix(0, nrow = q, ncol = max(N_pred_rdsem), byrow = TRUE)
+    Dpos1_rdsem <- rep(0,times=q)
+    for(i in 1:q){
+      if(N_pred_rdsem[i]!=0){
+        D_pred_rdsem[i,1:N_pred_rdsem[i]] <- as.integer(fix_pars_rdsem$Dpred[fix_pars_rdsem$Dout == i])
+        Dpos1_rdsem[i] <- min(fix_pars_rdsem$no[fix_pars_rdsem$Dout == i])
+      }
+    }
+  } else {
+    is_rdsem = rep(0, times = q)
+    N_pred_rdsem = rep(0, times = q)
+    D_pred_rdsem = matrix(0, nrow = q, ncol = max(N_pred_rdsem), byrow = TRUE)
+    Dpos1_rdsem <- rep(0,times=q)
+  }
+
+  # based on N_pred and presence of innovations check which construct is exogenous
   D_cen = sum(N_pred != 0)
-  is_wcen = as.array(ifelse(N_pred == 0, 0, 1))
+  # OVERWRITE HERE FOR NOW:
+  D_cen = length(c(has_inno, has_log.inno))
+
+
+  is_wcen = as.array(sapply(1:q, function(x){ifelse(x %in% has_inno | x %in% has_log.inno | N_pred[x]>0,1,0)}))
+  is_exo  = as.array(sapply(1:q, function(x){ifelse(!(x %in% has_inno | x %in% has_log.inno) | N_pred[x]>0,1,0)}))
   D_cen_pos = as.array(cumsum(is_wcen))
 
 
@@ -270,15 +315,18 @@ mlts_model_eval <- function(model){
   n_innos_fix = D_cen - sum(innos_rand)
   innos_fix_pos = cumsum(1 - innos_rand)
 
-
   n_pars = sum((model$Type == "Fixed effect" & !startsWith(model$Param, "r.zeta")))
   n_random = sum(model$isRandom, na.rm = TRUE)
+  n_iid = sum(model$Random_type == "iid")
+  n_mvn1 = sum(model$Random_type == "mvn")
+  n_mvn2 = sum(model$Random_type == "mvn2")
+  pos_iid = as.array(which(fix_pars$Random_type[fix_pars$isRandom==1] == "iid"))
+  pos_mvn1 = as.array(which(fix_pars$Random_type[fix_pars$isRandom==1] == "mvn"))
+  pos_mvn2 = as.array(which(fix_pars$Random_type[fix_pars$isRandom==1] == "mvn2"))
   n_fixed = n_pars - n_random - n_innos_fix
   is_random = fix_pars$no[fix_pars$isRandom==1]
 
-
-
-  is_fixed = matrix(fix_pars_dyn$no[fix_pars_dyn$isRandom==0], nrow = 1, ncol = n_fixed)
+  is_fixed = matrix(fix_pars$no[fix_pars$isRandom==0 & startsWith(fix_pars$Param, "phi")], nrow = 1, ncol = n_fixed)
   re_pars = model[model$Type=="Fixed effect" & model$isRandom==1,]
   re_pars$par_no = 1:nrow(re_pars)
 
@@ -399,11 +447,8 @@ mlts_model_eval <- function(model){
   prior_sd_R = model[model$Type=="Random effect SD", cols]
 
   # random effect correlations
-  if(n_random == 1){
-      prior_LKJ = 1
-    } else {
-      prior_LKJ = unique(model$prior_location[model$Type=="RE correlation"])
-    }
+  prior_LKJ = unique(model$prior_location[model$Type=="RE correlation"])
+  if(length(prior_LKJ) == 0){ prior_LKJ <- 1}
 
   # add Fixed effect prior of constant innovation variance (as SD)
   prior_sigma = matrix(ncol = 2, nrow = n_innos_fix)
@@ -447,6 +492,7 @@ mlts_model_eval <- function(model){
     D_cen,
     D_cen_pos,
     is_wcen,
+    is_exo,
     Dp_cen_pos,
     p_is_wcen,
     p_is_wcen_pos,
@@ -455,12 +501,19 @@ mlts_model_eval <- function(model){
     n_mus,
     n_pars,
     n_random,
+    n_iid,
+    n_mvn1,
+    n_mvn2,
+    pos_iid,
+    pos_mvn1,
+    pos_mvn2,
     n_fixed,
     is_random,
     re_pars,
     is_fixed,
     fix_pars,
     fix_pars_dyn,
+    fix_pars_rdsem,
     n_dyn.pars,
     n_int,
     N_pred,
@@ -481,6 +534,12 @@ mlts_model_eval <- function(model){
     inno_cov_load,
     inno_cors,
     n_inno_cors,
+    n_rdsem.pars,
+    is_rdsem,
+    N_pred_rdsem,
+    D_pred_rdsem,
+    Dpos1_rdsem,
+
 
     # REs as outcomes
     RE.PREDS, n_cov, n_cov_bs, n_cov_mat, n_cov_vars,

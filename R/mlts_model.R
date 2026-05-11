@@ -29,6 +29,14 @@
 #' (Note: this also results in removing the random effect variance of the respective parameter).
 #' @param ranef_zero Character. A character vector to index which random effect variances
 #' (referring to the parameter labels in `model$Param`) should be constrained to zero.
+#' @param ranef_str Character or list. Specify (joint) random effects distribution using
+#' `mvn` (the default) to assume all random effects to stem from a joint multivariate-normal distribution.
+#' Set to `iid` to assume all random effects to be independently normally distributed. Complex specifications
+#' assuming sets of random effects to stem from a joint MVN distribution can be entered as list of
+#' character vectors (referring to the parameter names). This is currently restricted to two MVN distributions.
+#' All remaining random effects that are not part of the list will be assumed iid.
+#' @param ranef_iid Character. Vector of random effects to be assumed uncorrelated from the remaining random effects
+#' (see also `ranef_str`). Only works in combination with `ranef_str = TRUE`.
 #' @param btw_factor Logical. If `TRUE` (the default), a common between-level factor
 #' is modeled across all indicator variables per construct `q`. If `FALSE`, instead of a between-level
 #' factor, indicator mean levels will be included as individual (random) effects drawn
@@ -63,12 +71,18 @@
 #' @param is_exogenous Integer or a vector of integers. Indicate if any of the constructs
 #' should be treated as exogenous (i.e., no latent mean centering will be performed). Probable use case:
 #' Adding a dichotomous time-varying predictor variable.
-#' @param incl_t0_effects A character vector. Experimental: Add contemporaneous effects to the model.
+#' @param incl_t0_effects A character vector. Add contemporaneous effects to the model.
 #' For example, to include an effect of the first construct on the second construct at time $t$,
 #' following the general pattern for naming of dynamic parameters in the mlts framework, can be included by
 #' specifying `phi(0)_21` where the `0` indicates the lag, the first subscript letter (`2`) the dependent,
 #' and the latter subscript (`1`) the independent construct. The respective within-level correlation/covariance
 #' of innovations between involved constructs will be excluded from the model accordingly.
+#' @param incl_rDSEM_effects A character vector. Add a structural (contemporaneous) regression effect(s) to the model.
+#' For each construct (`q`) which functions as dependent variable in any of the specified effects,
+#' all remaining dynamic (e.g., AR) effects are assumed for the residuals. Note that this residual DSEM approach
+#' substantially differs from the common DSEM approach! Following the general pattern for naming of dynamic parameters
+#' in the mlts framework, can be included by specifying `phi(s)_21` where the `s` indicates a structural effect,
+#' the first subscript letter (`2`) the dependent, and the latter subscript (`1`) the independent construct.
 #' @param incl_interaction_effects A character vector. Add interaction terms on
 #' the dynamic within-level. For example, to add an interaction term between the first
 #' construct at time $t$ (lag of 0) and the second construct at $t-1$ (lag of 1) to
@@ -163,21 +177,23 @@
 #'
 #' }
 
-mlts_model <- function(class = c("VAR"), q, p = NULL, max_lag = c(1,2,3),
-                          btw_factor = TRUE, btw_model = NULL,
-                          equal_loads_levels = FALSE,
-                          fix_dynamics = FALSE, fix_inno_vars = FALSE,
-                          fix_inno_covs = TRUE, inno_covs_zero = FALSE,
-                          inno_covs_dir = NULL,
-                          fixef_zero = NULL, ranef_zero = NULL,
-                          ranef_pred = NULL, out_pred=NULL, out_pred_add_btw = NULL,
-                          group = NULL,
-                          is_exogenous = NULL,
-                          incl_t0_effects = NULL,
-                          incl_interaction_effects = NULL,
-                          censor_left = NULL, censor_right = NULL, silent = FALSE){
+mlts_model <- function(class = c("VAR"), q, p = NULL, max_lag = c(0,1,2,3),
+                       btw_factor = TRUE, btw_model = NULL,
+                       equal_loads_levels = FALSE,
+                       fix_dynamics = FALSE, fix_inno_vars = FALSE,
+                       fix_inno_covs = TRUE, inno_covs_zero = FALSE,
+                       inno_covs_dir = NULL,
+                       fixef_zero = NULL, ranef_zero = NULL,
+                       ranef_str = "mvn", ranef_iid = NULL,
+                       ranef_pred = NULL, out_pred=NULL, out_pred_add_btw = NULL,
+                       group = NULL,
+                       is_exogenous = NULL,
+                       incl_t0_effects = NULL,
+                       incl_rDSEM_effects = NULL,
+                       incl_interaction_effects = NULL,
+                       censor_left = NULL, censor_right = NULL, silent = FALSE){
 
-  if(length(max_lag) == 3){
+  if(length(max_lag) == 4){
     max_lag = 1
   }
 
@@ -245,14 +261,14 @@ mlts_model <- function(class = c("VAR"), q, p = NULL, max_lag = c(1,2,3),
     }
   }
 
+  # check for structural regressions effects (rDSEM)
+  if(!is.null(incl_rDSEM_effects)){
+    rdsem_effs = eval_rDSEM_effects(incl_rDSEM_effects, q = q)
+  }
+
   # check for interaction effects on the within-level
   if(!is.null(incl_interaction_effects)){
-    if(q == 1){
-      if(silent == F){warning("Input of 'incl_interaction_effects' will be ignored in AR models (q = 1).")}
-    }
-    if(q > 1){
-      int_effs = eval_int_effects(int_input = incl_interaction_effects, q = q)
-    }
+    int_effs = eval_int_effects(int_input = incl_interaction_effects, q = q)
   }
 
   if(q > 2 & fix_inno_covs == FALSE & any(is_exogenous < 3)){
@@ -267,9 +283,10 @@ mlts_model <- function(class = c("VAR"), q, p = NULL, max_lag = c(1,2,3),
   n_mus = q                                 # trait level parameters
   mus_pars = paste0("mu_",1:n_mus)
 
+  ### dynamic effects
   n_phi = (q^2)*max_lag+length(incl_t0_effects) # dynamic parameters
   phi_order = rep(paste0("phi(",0:max_lag,")_"), each = q, times = q)
-  phis = paste0(rep(1:q, each = q*(max_lag+1)), rep(1:q, times = q*max_lag))
+  phis = paste0(rep(1:q, each = q*(max_lag+1)), rep(1:q, times = q*ifelse(max_lag==0,1,max_lag)))
   phi_pars = paste0(phi_order, phis)
   # remove all t0-effects not included in incl_to_effects
   phi_pars = phi_pars[phi_pars %in% incl_t0_effects | !startsWith(prefix = "phi(0)_",phi_pars)]
@@ -285,6 +302,13 @@ mlts_model <- function(class = c("VAR"), q, p = NULL, max_lag = c(1,2,3),
     phi_pars = phi_pars_int
     n_phi = n_phi + nrow(int_effs)
   }
+
+  if(!is.null(incl_rDSEM_effects)){
+    n_phi = n_phi+length(incl_rDSEM_effects)
+    phi_pars = c(sort(incl_rDSEM_effects), phi_pars)
+  }
+
+
   # innovation variances
   n_sigma = q
   sigma_pars = paste0("ln.sigma2_", 1:q)
@@ -335,7 +359,8 @@ mlts_model <- function(class = c("VAR"), q, p = NULL, max_lag = c(1,2,3),
         rep("Log Innovation Variance", n_sigma),
         rep("Log Innovation Covariance", n_covs)
       ),
-      "isRandom" = 1
+      "isRandom" = 1,
+      "Random_type" = "mvn"
     )
     RE = data.frame(
       "Model" = "Structural",
@@ -348,7 +373,8 @@ mlts_model <- function(class = c("VAR"), q, p = NULL, max_lag = c(1,2,3),
         rep("Log Innovation Variance", n_sigma),
         rep("Log Innovation Covariance", n_covs)
       ),
-      "isRandom" = 0
+      "isRandom" = 0,
+      "Random_type" = " "
     )
     ## combine
     df.pars = rbind(FE, RE)
@@ -366,7 +392,8 @@ mlts_model <- function(class = c("VAR"), q, p = NULL, max_lag = c(1,2,3),
         rep("Trait", n_mus),
         rep("Dynamic", n_phi),
         rep("Log Innovation Variance", n_sigma)
-      ), "isRandom" = 1
+      ), "isRandom" = 1,
+      "Random_type" = "mvn"
     )
     ## random effect variances
     RE = data.frame(
@@ -379,40 +406,35 @@ mlts_model <- function(class = c("VAR"), q, p = NULL, max_lag = c(1,2,3),
         rep("Dynamic", n_phi),
         rep("Log Innovation Variance", n_sigma)
       ),
-      "isRandom" = 0
+      "isRandom" = 0,
+      "Random_type" = " "
     )
   }
 
   ## add random effect correlations
   rand.pars = FE[FE$isRandom == 1,"Param"]
   n_rand = length(rand.pars)
-  btw.cov_pars = c()
   if(n_rand>1){
-    n_cors = (n_rand * (n_rand-1))/2
-    qs = c()
-    ps = c()
-    for(i in 1:(n_rand-1)){
-      qs = c(qs, rep(rand.pars[i], each = n_rand-i))
-    }
-    for(i in 2:n_rand){
-      ps = c(ps, rep(rand.pars[i:n_rand], 1))
-    }
-
-    btw.cov_pars = paste0("r_", qs,".", ps)
+    temp = t(combn(rand.pars,2))
+    btw.cov_pars = paste0("r_", temp[,1],".", temp[,2])
 
     ## random effect correlations
     REcors = data.frame(
       "Model" = "Structural",
       "Level" = "Between",
-      "Type" = rep("RE correlation",n_cors),
+      "Type" = "RE correlation",
       "Param" = btw.cov_pars,
       "Param_Label" = "RE Cor",
-      "isRandom" = 0
+      "isRandom" = 0,
+      "Random_type" = " "
     )
 
     ## combine
     model = rbind(FE, RE, REcors)
   }
+
+
+
 
   # ---
   if(q >= 2 & inno_covs_zero == FALSE & fix_inno_covs == FALSE){
@@ -442,18 +464,21 @@ mlts_model <- function(class = c("VAR"), q, p = NULL, max_lag = c(1,2,3),
 
   if(fix_dynamics == TRUE | fix_inno_vars == TRUE |
      fix_inno_covs == TRUE | !is.null(fixef_zero) |
-     !is.null(ranef_zero) | inno_covs_zero == TRUE) {
+     !is.null(ranef_zero) | inno_covs_zero == TRUE|
+     (is.list(ranef_str) | ranef_str == "iid")[1] |
+     !is.null(ranef_iid)) {
     model = mlts_model_constraint(
       model = model,
       fix_dynamics = fix_dynamics, fix_inno_vars = fix_inno_vars,
       inno_covs_zero = inno_covs_zero,
-      fix_inno_covs = fix_inno_covs, fixef_zero = fixef_zero, ranef_zero = ranef_zero)
+      fix_inno_covs = fix_inno_covs, fixef_zero = fixef_zero, ranef_zero = ranef_zero,
+      ranef_str = ranef_str, ranef_iid = ranef_iid)
   }
 
   # MEASUREMENT MODEL =========================================================
   if(!is.null(p)){
     model = mlts_model_measurement(
-      model = model, q = q, p = p,
+      model = model, q = q, p = p, ranef_iid = ranef_iid, ranef_str = ranef_str,
       btw_factor = btw_factor, btw_model = btw_model, silent = silent)
 
     # update equality constraints on loading parameters across levels
@@ -477,8 +502,8 @@ mlts_model <- function(class = c("VAR"), q, p = NULL, max_lag = c(1,2,3),
   # BETWEEN-MODEL =============================================================
   if(!is.null(ranef_pred) | !is.null(out_pred)){
     model = mlts_model_betw(model = model,
-                               ranef_pred =ranef_pred, out_pred=out_pred,
-                               out_pred_add_btw = out_pred_add_btw)
+                            ranef_pred =ranef_pred, out_pred=out_pred,
+                            out_pred_add_btw = out_pred_add_btw)
   }
 
 

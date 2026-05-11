@@ -8,7 +8,7 @@ mlts_model(
   class = c("VAR"),
   q,
   p = NULL,
-  max_lag = c(1, 2, 3),
+  max_lag = c(0, 1, 2, 3),
   btw_factor = TRUE,
   btw_model = NULL,
   equal_loads_levels = FALSE,
@@ -19,12 +19,15 @@ mlts_model(
   inno_covs_dir = NULL,
   fixef_zero = NULL,
   ranef_zero = NULL,
+  ranef_str = "mvn",
+  ranef_iid = NULL,
   ranef_pred = NULL,
   out_pred = NULL,
   out_pred_add_btw = NULL,
   group = NULL,
   is_exogenous = NULL,
   incl_t0_effects = NULL,
+  incl_rDSEM_effects = NULL,
   incl_interaction_effects = NULL,
   censor_left = NULL,
   censor_right = NULL,
@@ -85,6 +88,16 @@ argument to \code{pos}, or \code{neg} respectively.}
 \item{ranef_zero}{Character. A character vector to index which random effect variances
 (referring to the parameter labels in \code{model$Param}) should be constrained to zero.}
 
+\item{ranef_str}{Character or list. Specify (joint) random effects distribution using
+\code{mvn} (the default) to assume all random effects to stem from a joint multivariate-normal distribution.
+Set to \code{iid} to assume all random effects to be independently normally distributed. Complex specifications
+assuming sets of random effects to stem from a joint MVN distribution can be entered as list of
+character vectors (referring to the parameter names). This is currently restricted to two MVN distributions.
+All remaining random effects that are not part of the list will be assumed iid.}
+
+\item{ranef_iid}{Character. Vector of random effects to be assumed uncorrelated from the remaining random effects
+(see also \code{ranef_str}). Only works in combination with \code{ranef_str = TRUE}.}
+
 \item{ranef_pred}{A character vector or a named list. Include between-level covariate(s)
 as predictor(s) of all random effects in \code{model} by entering a vector of unique variable
 names. Alternatively, to include between-level covariates or differing sets of
@@ -114,12 +127,19 @@ are allowed to vary by cluster, you can enter the grouping variable to \code{re_
 should be treated as exogenous (i.e., no latent mean centering will be performed). Probable use case:
 Adding a dichotomous time-varying predictor variable.}
 
-\item{incl_t0_effects}{A character vector. Experimental: Add contemporaneous effects to the model.
+\item{incl_t0_effects}{A character vector. Add contemporaneous effects to the model.
 For example, to include an effect of the first construct on the second construct at time $t$,
 following the general pattern for naming of dynamic parameters in the mlts framework, can be included by
 specifying \verb{phi(0)_21} where the \code{0} indicates the lag, the first subscript letter (\code{2}) the dependent,
 and the latter subscript (\code{1}) the independent construct. The respective within-level correlation/covariance
 of innovations between involved constructs will be excluded from the model accordingly.}
+
+\item{incl_rDSEM_effects}{A character vector. Add a structural (contemporaneous) regression effect(s) to the model.
+For each construct (\code{q}) which functions as dependent variable in any of the specified effects,
+all remaining dynamic (e.g., AR) effects are assumed for the residuals. Note that this residual DSEM approach
+substantially differs from the common DSEM approach! Following the general pattern for naming of dynamic parameters
+in the mlts framework, can be included by specifying \verb{phi(s)_21} where the \code{s} indicates a structural effect,
+the first subscript letter (\code{2}) the dependent, and the latter subscript (\code{1}) the independent construct.}
 
 \item{incl_interaction_effects}{A character vector. Add interaction terms on
 the dynamic within-level. For example, to add an interaction term between the first
