@@ -3,6 +3,7 @@ void priors_lp (array[] row_vector gammas,
                 array[] vector sd_R,
                 matrix prior_sd_R,
                 array[] matrix L,
+                array[] matrix L2,
                 real prior_LKJ,
 
                 array[] vector sigma,
@@ -23,14 +24,22 @@ void priors_lp (array[] row_vector gammas,
 
                 int n_fixed,
                 array[] vector b_fix,
-                matrix prior_b_fix){
+                matrix prior_b_fix,
+              
+                int n_mvn1,
+                int n_mvn2){
 
   int G = size(gammas);
 
   for(g in 1:G){
     target += normal_lpdf(gammas[g] | prior_gamma[,1],prior_gamma[,2]);
     target += cauchy_lpdf(sd_R[g] | prior_sd_R[,1], prior_sd_R[,2]);
-    target += lkj_corr_cholesky_lpdf(L[g] | prior_LKJ);
+    if(n_mvn1>0){
+      target += lkj_corr_cholesky_lpdf(L[g,] | prior_LKJ);
+    }
+    if(n_mvn2>0){
+      target += lkj_corr_cholesky_lpdf(L2[g,] | prior_LKJ);
+    }
 
     if(n_innos_fix>0){
       target += cauchy_lpdf(sigma[g] | prior_sigma[,1], prior_sigma[,2]);
@@ -56,6 +65,7 @@ void priors_lp (array[] row_vector gammas,
                 array[] vector sd_R,
                 matrix prior_sd_R,
                 array[] matrix L,
+                array[] matrix L2,
                 real prior_LKJ,
 
                 array[] vector sigma,
@@ -78,13 +88,16 @@ void priors_lp (array[] row_vector gammas,
                 array[] vector b_fix,
                 matrix prior_b_fix,
 
-                array[] matrix L_inno //nur angeben bei covsfix Modellen
+                int n_mvn1,
+                int n_mvn2,
+
+                array[] matrix L_inno // only for covsfix models
                 ){
   // Basisfunktion
-  priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, prior_LKJ,
+  priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, L2, prior_LKJ,
             sigma, n_innos_fix, prior_sigma, n_cov, b_re_pred, prior_b_re_pred,
             n_out, alpha_out, prior_alpha_out, b_out_pred, prior_b_out, sigma_out, prior_sigma_out,
-            n_fixed, b_fix, prior_b_fix);
+            n_fixed, b_fix, prior_b_fix, n_mvn1, n_mvn2);
 
   // neue Variable für covsfix Modelle
   int G = size(gammas);

@@ -78,16 +78,17 @@
 #'
 #' # Computation of individual parameter reliability for an AR(1) model:
 #' ## Model specification
-#' AR1 = mlts_model(q = 1)
+#' AR1 <- mlts_model(q = 1)
 #'
 #' ## Simulate data
-#' simData = mlts_sim(model = AR1, N = 70, TP = 70, default = TRUE)
+#' simData <- mlts_sim(model = AR1, N = 70, TP = 70, default = TRUE)
 #'
 #' ## Estimate the model and store MCMC draws of individual parameters
-#' fit <- mlts_fit(model = AR1, data = simData$data,
-#'                 id = "ID", ts = "Y1",
-#'                 monitor_person_pars = TRUE    # !important
-#'                 )
+#' fit <- mlts_fit(
+#'   model = AR1, data = simData$data,
+#'   id = "ID", ts = "Y1",
+#'   monitor_person_pars = TRUE # !important
+#' )
 #'
 #' # Person separation reliability
 #' mlts_rel(fit, method = "eap")
@@ -97,18 +98,17 @@
 #' }
 #'
 #' @export
-mlts_rel <- function(mltsfit,  method = c("EAP", "RMU"), prob = 0.95, seed = NULL){
-
+mlts_rel <- function(mltsfit, method = c("EAP", "RMU"), prob = 0.95, seed = NULL) {
   # check that MCMC draws of individual parameter are available
-  if(is.null(mltsfit$person.pars.summary$sd)){
+  if (is.null(mltsfit$person.pars.summary$sd)) {
     stop("MCMC draws of individual parameter are not available. Refit the model with monitor_person_pars = TRUE.")
   }
 
   method <- match.arg(method)
 
 
-  if (method== "EAP"){
-    u_pars = mltsfit$model$Param[mltsfit$model$isRandom == 1]
+  if (method == "EAP") {
+    u_pars <- mltsfit$model$Param[mltsfit$model$isRandom == 1]
     split_data <- split(mltsfit$person.pars.summary, mltsfit$person.pars.summary$Param)
 
     reliability_results <- sapply(u_pars, function(x) {
@@ -123,8 +123,7 @@ mlts_rel <- function(mltsfit,  method = c("EAP", "RMU"), prob = 0.95, seed = NUL
 
 
   if (method == "RMU") {
-
-    if(!is.null(seed)){
+    if (!is.null(seed)) {
       set.seed(seed = seed)
     }
 
@@ -134,36 +133,36 @@ mlts_rel <- function(mltsfit,  method = c("EAP", "RMU"), prob = 0.95, seed = NUL
     b_free_array <- draws_rstan$b_free
 
     # 1. preparation of a list of all N*K matrices
-    name_vec <- mltsfit$model$Param[mltsfit$model$Level == "Within" & mltsfit$model$isRandom==1]
+    name_vec <- mltsfit$model$Param[mltsfit$model$Level == "Within"
+                                    & mltsfit$model$isRandom == 1]
     matrix_list <- asplit(b_free_array, MARGIN = 3)
-    matrix_list <- lapply(matrix_list, t)                  # list of all N*K matrices
+    matrix_list <- lapply(matrix_list, t) # list of all N*K matrices
     names(matrix_list) <- name_vec
 
     # 2. randomly sort columns and split matrices into M and W
-    matrix_list <- lapply(matrix_list, function(mat){
+    matrix_list <- lapply(matrix_list, function(mat) {
       mat[, sample(ncol(mat))]
     })
-    split_matrix_list <- lapply(matrix_list, function (mat){
+    split_matrix_list <- lapply(matrix_list, function(mat) {
       mid <- ncol(mat) / 2
       list(
         M = mat[, 1:mid],
-        W = mat[, (mid+1):ncol(mat)]
+        W = mat[, (mid + 1):ncol(mat)]
       )
     })
 
     # 3. generate vector of pearson correlations between M and W
-    cor_list <- lapply(split_matrix_list, function (mat){
-      cor_vec <- sapply(1:ncol(mat[[1]]), function(i){
+    cor_list <- lapply(split_matrix_list, function(mat) {
+      cor_vec <- sapply(1:ncol(mat[[1]]), function(i) {
         cor_val <- stats::cor(mat$M[, i], mat$W[, i], method = "pearson")
         return(cor_val)
       })
     })
     # 4. calculating reliability etc. from p
-    reliability_results <- do.call(rbind, lapply(cor_list, function(i){
+    reliability_results <- do.call(rbind, lapply(cor_list, function(i) {
+      hdi_int <- HDInterval::hdi(i, credMass = prob)
 
-      hdi_int = HDInterval::hdi(i, credMass = prob)
-
-      data.frame (
+      data.frame(
         rel_mean = mean(i),
         rel_mdn = median(i),
         rel_sd = sd(i),

@@ -144,7 +144,7 @@ prepare_data <- function(data, id, ts, time = NULL, tinterval = NULL,
     if (is.character(time)) {
       # remove all rows with only NAs before time grid creation to avoid
       # missing values to determine the time grid
-      data = data[data$miss.NA_all == FALSE,]
+      data = data[data$miss.NA_all == FALSE, ]
 
       # create time grid according to continuous time variable
       data = create_missings(data = data, tinterval = tinterval, id = id,

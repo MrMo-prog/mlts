@@ -138,7 +138,7 @@ mlts_fit <- function(model,
                      print_warning = TRUE,
                      threads_per_chain = 1,
                      grainsize = 1,
-                     missings =c("inside", "outside"),
+                     missings = c("inside", "outside"),
                      ...
 ){
   missings <- match.arg(missings)

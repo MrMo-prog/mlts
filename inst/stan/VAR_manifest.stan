@@ -16,6 +16,15 @@ data {
   int<lower=1> N_obs; 	          // observations in total: N * TP
   int<lower=1> n_pars;            // number of parameters
   int<lower=1> n_random;          // number of random effects
+
+  //new
+  int<lower=0> n_mvn1;
+  int<lower=0> n_mvn2;
+  int<lower=0> n_iid;
+  array[n_iid] int pos_iid;
+  array[n_mvn1] int pos_mvn1;
+  array[n_mvn2] int pos_mvn2;
+
   int n_fixed;
   array[1, n_fixed] int is_fixed;
   array[n_random] int is_random;  // which parameters to model person-specific
@@ -97,6 +106,11 @@ data {
 
   array[D] int<lower=0,upper=1> is_wcen;   // parameter should be within centered = 1; should not = 0
   array[D] int<lower=0,upper=D> D_cen_pos; // pos of parameters that should be centered
+
+  array[D] int<lower=0, upper=1> is_rdsem;
+  array[D] int<lower=0> N_pred_rdsem;
+  array[D, max(N_pred_rdsem)] int<lower=0> D_pred_rdsem;
+  array[D] int Dpos1_rdsem;
 }
 
 transformed data{
@@ -113,13 +127,13 @@ transformed data{
 
   for (n in 1:N){
     seq_N[n] = n;
-    obs_id_temp = (N_obs_id[n]);
+    obs_id_temp = N_obs_id[n];
     obs_id_temp_cov = N_obs_id[n] - maxLag;
 
     pos_start[n] = pos;
-    pos_end[n] = pos + obs_id_temp -1;
     pos_start_cov[n] = pos_cov;
-    pos_end_cov[n] = pos_cov + obs_id_temp_cov -1;
+    pos_end[n] = pos + obs_id_temp -1;
+    pos_end_cov[n] = pos_cov + obs_id_temp_cov - 1;
 
     pos = pos + obs_id_temp;
     pos_cov = pos_cov + obs_id_temp_cov;
@@ -131,7 +145,8 @@ parameters {
   array[G] vector[n_fixed] b_fix;        // fixed parameters
   array[G] vector<lower=0>[n_random] sd_R;        // random effect SD
   array[G] vector<lower=0>[n_innos_fix] sigma;    // SDs of fixed innovation variances
-  array[G] cholesky_factor_corr[n_random] L;      // cholesky factor of random effects correlation matrix
+  array[G] cholesky_factor_corr[n_mvn1] L;      // cholesky factor of random effects correlation matrix
+  array[G] cholesky_factor_corr[n_mvn2] L2;     // cholesky factor of random effects correlation matrix
   array[G] row_vector[n_random] gammas;           // fixed effect (intercepts)
   array[G] vector[n_cov_bs] b_re_pred;            // regression coefs of RE prediction
   array[G] vector[n_out] alpha_out;               // outcome precition intercepts
@@ -178,10 +193,16 @@ transformed parameters{
 
 model {
   array[D] vector[N_obs] y_merge;
-  array[G] matrix[n_random, n_random] SIGMA;
+  array[G] matrix[n_mvn1, n_mvn1] SIGMA;
+  array[G] matrix[n_mvn2, n_mvn2] SIGMA2;
 
   for(g in 1:G){
-    SIGMA[g] = diag_pre_multiply(sd_R[g], L[g]); // covariance matrix of parameters by group
+    if(n_mvn1 > 0){
+      SIGMA[g] = diag_pre_multiply(sd_R[g,pos_mvn1], L[g,]);
+    }
+    if(n_mvn2 > 0){
+      SIGMA2[g] = diag_pre_multiply(sd_R[g,pos_mvn2], L2[g,]);
+    }
   }
 
   y_merge = y;
@@ -196,19 +217,27 @@ model {
   }
 
   // (Hyper-)Priors
-  priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, prior_LKJ, sigma,
+  priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, L2, prior_LKJ, sigma,
   n_innos_fix, prior_sigma, n_cov, b_re_pred, prior_b_re_pred, n_out, alpha_out,
-  prior_alpha_out, b_out_pred, prior_b_out, sigma_out, prior_sigma_out, n_fixed, b_fix, prior_b_fix);
+  prior_alpha_out, b_out_pred, prior_b_out, sigma_out, prior_sigma_out, n_fixed,
+  b_fix, prior_b_fix, n_mvn1, n_mvn2);
 
   for(pp in 1:N){
       int obs_id = N_obs_id[pp]; // observations per person
-      int gg_p = g_id[pp];       // group
+      int pp_g = g_id[pp];       // group
 
       // level 2 prediction
-      if (n_random == 1){
-        target += normal_lpdf(b_free[pp, 1] | bmu[pp, 1], sd_R[gg_p, 1]);
-      } else{
-        target += multi_normal_cholesky_lpdf(b_free[pp, 1:n_random] | bmu[pp, 1:n_random], SIGMA[gg_p]);
+      // individual parameters from (multivariate) normal distribution
+      if(n_iid > 0){
+        for(jj in pos_iid){
+          target += normal_lpdf(b_free[pp,jj] | bmu[pp,jj], sd_R[pp_g, jj]);
+        }
+      }
+      if(n_mvn1 > 0) {
+        target += multi_normal_cholesky_lpdf(b_free[pp, pos_mvn1] | bmu[pp, pos_mvn1], SIGMA[pp_g]);
+      }
+      if(n_mvn2 > 0) {
+        target += multi_normal_cholesky_lpdf(b_free[pp, pos_mvn2] | bmu[pp, pos_mvn2], SIGMA2[pp_g]);
       }
 
       array[n_inno_covs] vector[obs_id-maxLag] eta_cov_id;
@@ -233,13 +262,23 @@ model {
         }
       }
 
+      if( sum(is_rdsem) > 0 ){
+        for (d in 1:D) {
+          if (is_rdsem[d] == 1 ) {
+            for(k in 1:N_pred_rdsem[d]){
+              y_cen[d,] = y_cen[d,] - b[pp,(Dpos1_rdsem[d]+(k-1))] * y_cen[D_pred_rdsem[d,k],];
+            }
+          }
+        }
+      }
+
       for(d in 1:D){
 
         if(is_wcen[d] == 1){
           // build prediction matrix for specific dimensions
           int n_cols; // matrix dimensions
           n_cols = (n_inno_covs>0 && d<3)? N_pred[d] + n_inno_covs : N_pred[d];
-          {
+          if (N_pred[d] > 0) {
             matrix[obs_id - maxLag, n_cols] b_mat; // dimension specific prediction matrix: time points * predictors
             vector[n_cols] b_use; //
             for(nd in 1:N_pred[d]){ // AR effect and CL effects
@@ -260,7 +299,11 @@ model {
             }
 
             mus[D_cen_pos[d]] = b_mat * b_use;
+          } else {
+            mus[D_cen_pos[d],] = rep_vector(0,(obs_id-maxLag));
           }
+
+          // sampling statement
           target += normal_lpdf(y_cen[d, (1+maxLag):obs_id] | mus[D_cen_pos[d]], sd_noise[D_cen_pos[d],pp]);
         }
       } // end of loop over dimensions
@@ -276,8 +319,14 @@ model {
 }
 
 generated quantities{
-  array[G] matrix[n_random,n_random] bcorr; // random coefficients correlation matrix
+  array[G] matrix[n_mvn1,n_mvn1] bcorr;  // random coefficients correlation matrix
+  array[G] matrix[n_mvn2,n_mvn2] bcorr2; // random coefficients correlation matrix
   for(g in 1:G){
+    if(n_mvn1 > 0){
       bcorr[g] = multiply_lower_tri_self_transpose(L[g]);
+    }
+    if(n_mvn2 > 0){
+      bcorr2[g] = multiply_lower_tri_self_transpose(L2[g]);
+    }
     }
 }
