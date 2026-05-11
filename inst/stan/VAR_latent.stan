@@ -17,26 +17,16 @@ data {
   array[n_p] int D_perP;          // indicate dimension per indicator
   array[n_p] int is_SI;           // indicate if single-indicator per construct
   array[D] int D_pos_is_SI;       // indicate position of single-indicator per construct
-  int<lower=0, upper=3> maxLag; // maximum lag
+  int<lower=1, upper=3> maxLag; // maximum lag
   int<lower=1> N_obs; 	    // observations in total: N * TP
   int<lower=1> n_pars;
   int<lower=D_cen> n_random;    // number of random effects
-<<<<<<< HEAD
   int<lower=0> n_mvn1;
   int<lower=0> n_mvn2;
   int<lower=0> n_iid;
   array[n_iid] int pos_iid;
   array[n_mvn1] int pos_mvn1;
   array[n_mvn2] int pos_mvn2;
-=======
-
-int<lower=0> n_mvn1;
-int<lower=0> n_mvn2;
-int<lower=0> n_iid;
-array[n_iid] int pos_iid;
-array[n_mvn1] int pos_mvn1;
-array[n_mvn2] int pos_mvn2;
->>>>>>> RDSEM
 
   int n_fixed;
   array[1,n_fixed] int is_fixed;
@@ -177,11 +167,7 @@ parameters {
   array[G] vector<lower=0>[n_random] sd_R;        // random effect SD
   array[G] vector<lower=0>[n_innos_fix] sigma;    // SDs of fixed innovation variances
   array[G] cholesky_factor_corr[n_mvn1] L;      // cholesky factor of random effects correlation matrix
-<<<<<<< HEAD
   array[G] cholesky_factor_corr[n_mvn2] L2;      // cholesky factor of random effects correlation matrix
-=======
-  array[G] cholesky_factor_corr[n_mvn2] L2;     // cholesky factor of random effects correlation matrix
->>>>>>> RDSEM
   vector[n_miss] y_impute;               // vector to store imputed values
   vector<upper=censL_val>[n_censL] y_impute_censL;
   vector<lower=censR_val>[n_censR] y_impute_censR;
@@ -205,7 +191,7 @@ parameters {
 
 transformed parameters {
   matrix[N, n_random] bmu;     // gammas of person-specific parameters
-  matrix[N,n_pars-n_innos_fix] b;
+  matrix[N,n_pars] b;
   array[D_cen] vector[N] sd_noise;
   array[n_inno_covs] vector[N] sd_inncov;
   vector[n_p] loadB = rep_vector(1, n_p); // measurement model parameters
@@ -250,7 +236,7 @@ model {
   int pos_cov = 1;   // covariance position
   int obs_id = 1;    // declare local variable to store variable number of obs per person
   array[n_p] vector[N_obs] y_merge;
-  array[max(p_is_wcen_pos)] vector[N_obs] Ymus;
+  array[n_p] vector[N_obs] Ymus;
   array[n_p] vector[N] YB;
   array[G] matrix[n_mvn1, n_mvn1] SIGMA;
   array[G] matrix[n_mvn2, n_mvn2] SIGMA2;
@@ -264,7 +250,6 @@ model {
     }
   }
 
-<<<<<<< HEAD
   y_merge = y;          // add observations
   if (n_miss > 0){
       y_merge = missings_and_censoring(y_merge, n_miss_p, pos_miss_p, y_impute);
@@ -274,48 +259,13 @@ model {
   }
   if (n_censR > 0){
      y_merge = missings_and_censoring(y_merge, n_censR_p, pos_censR_p, y_impute_censR);
-=======
-  // add imputed values for missings on each indicator
-  y_merge = y;
-  for(i in 1:n_p){
-    if(n_miss_p[i]>0){
-      y_merge[i,pos_miss_p[i,1:n_miss_p[i]]] = segment(y_impute, p_miss, n_miss_p[i]);
-      p_miss = p_miss + n_miss_p[i];
-    }
-  }
-
-  // replace values at censor thresholds
-  for(i in 1:n_p){
-    if(n_censL_p[i]>0){
-    // add imputed values for observations at floor (threshold for censoring)
-    y_merge[i,pos_censL_p[i,1:n_censL_p[i]]] = segment(y_impute_censL, p_censL, n_censL_p[i]);
-    p_censL = p_censL + n_censL_p[i];
-    }
-    if(n_censR_p[i]>0){
-    // add imputed values for observations at ceiling (threshold for censoring)
-    y_merge[i,pos_censR_p[i,1:n_censR_p[i]]] = segment(y_impute_censR, p_censR, n_censR_p[i]);
-    p_censR = p_censR + n_censR_p[i];
-    }
->>>>>>> RDSEM
   }
   // (Hyper-)Priors
-<<<<<<< HEAD
-  priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, prior_LKJ,
+  priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, L2, prior_LKJ,
                       sigma, n_innos_fix, prior_sigma, n_cov, b_re_pred,
                       prior_b_re_pred, n_out, alpha_out, prior_alpha_out,
                       b_out_pred, prior_b_out, sigma_out, prior_sigma_out,
                       n_fixed, b_fix, prior_b_fix, n_mvn1, n_mvn2);
-=======
- for(g in 1:G){
-  target += normal_lpdf(gammas[g,] | prior_gamma[,1],prior_gamma[,2]);
-  target += cauchy_lpdf(sd_R[g,] | prior_sd_R[,1], prior_sd_R[,2]);
-    if(n_mvn1>0){
-      target += lkj_corr_cholesky_lpdf(L[g,] | prior_LKJ);
-    }
-    if(n_mvn2>0){
-      target += lkj_corr_cholesky_lpdf(L2[g,] | prior_LKJ);
-    }
->>>>>>> RDSEM
 
   // priors on measurement model parameter
   target += normal_lpdf(alpha_free | prior_alpha[,1], prior_alpha[,2]);
@@ -338,11 +288,7 @@ model {
   for (pp in 1:N) {
 
     int pp_g = 1;
-<<<<<<< HEAD
     
-=======
-
->>>>>>> RDSEM
     // store number of observations per person
     obs_id = (N_obs_id[pp]);
     int pos_etaW_free = 1;    // running counter variable to index positition on etaW_free
@@ -368,10 +314,6 @@ model {
       }
     }
 
-<<<<<<< HEAD
-=======
-
->>>>>>> RDSEM
     // individual parameters from (multivariate) normal distribution
     if(n_iid > 0){
       for(jj in pos_iid){

@@ -12,16 +12,12 @@ data {
   int<lower=1> G;   // number of groups
   int<lower=1> D; 	// number of time-varying constructs
   int<lower=1> D_cen;
-  int<lower=0, upper=3> maxLag; // maximum lag
+  int<lower=1, upper=3> maxLag; // maximum lag
   int<lower=1> N_obs; 	// observations in total: N * TP
   int<lower=1> n_pars;
   int<lower=1> n_random;   // number of random effects
 
-<<<<<<< HEAD
     // new
-=======
-  // new
->>>>>>> RDSEM
   int<lower=0> n_mvn1;
   int<lower=0> n_mvn2;
   int<lower=0> n_iid;
@@ -123,11 +119,7 @@ parameters {
   array[G] vector<lower=0>[n_innos_fix] sigma;    // SDs of fixed innovation variances
   array[G] cholesky_factor_corr[n_mvn1] L;      // cholesky factor of random effects correlation matrix
   array[G] cholesky_factor_corr[n_mvn2] L2;     // cholesky factor of random effects correlation matrix
-<<<<<<< HEAD
   array[G] cholesky_factor_corr[D_cen] L_inno;        // cholesky factor of prediction errors
-=======
-  array[G] cholesky_factor_corr[D_cen] L_inno;    // cholesky factor of prediction errors
->>>>>>> RDSEM
   array[G] row_vector[n_random] gammas;           // fixed effect (intercepts)
   array[G] vector[n_cov_bs] b_re_pred;            // regression coefs of RE prediction
   array[G] vector[n_fixed] b_fix;
@@ -141,7 +133,7 @@ parameters {
 
 transformed parameters {
   matrix[N, n_random] bmu;     // gammas of person-specific parameters
-  matrix[N, n_pars-n_innos_fix] b;
+  matrix[N,n_pars] b;
   array[N] vector[D_cen] sd_noise;
 
   bmu = calculate_bmu(G, N, n_random, gammas, n_cov, n_cov_bs, n_cov_mat, b_re_pred,
@@ -166,11 +158,7 @@ model {
   int pos = 1;       // initialize position indicator
   int obs_id = 1;    // declare local variable to store variable number of obs per person
   array[D] vector[N_obs] y_merge;
-<<<<<<< HEAD
   array[G] matrix[n_mvn1, n_mvn2] SIGMA;
-=======
-  array[G] matrix[n_mvn1, n_mvn1] SIGMA;
->>>>>>> RDSEM
   array[G] matrix[n_mvn2, n_mvn2] SIGMA2;
 
   for(g in 1:G){
@@ -179,19 +167,6 @@ model {
     }
     if(n_mvn2 > 0){
       SIGMA2[g] = diag_pre_multiply(sd_R[g,pos_mvn2], L2[g,]);
-<<<<<<< HEAD
-=======
-    }
-  }
-
-  y_merge = y;      // add observations
-
-  for(i in 1:D){
-    if(n_miss_D[i]>0){
-    // add imputed values for missings on each indicator
-    y_merge[i,pos_miss_D[i,1:n_miss_D[i]]] = segment(y_impute, p_miss, n_miss_D[i]);
-    p_miss = p_miss + n_miss_D[i];    // update counter for next indicator i+1
->>>>>>> RDSEM
     }
   }
 
@@ -207,42 +182,11 @@ model {
   }
 
   // (Hyper-)Priors
-<<<<<<< HEAD
-  priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, prior_LKJ,
+  priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, L2, prior_LKJ,
                       sigma, n_innos_fix, prior_sigma, n_cov, b_re_pred,
                       prior_b_re_pred, n_out, alpha_out, prior_alpha_out,
                       b_out_pred, prior_b_out, sigma_out, prior_sigma_out,
                       n_fixed, b_fix, prior_b_fix, n_mvn1, n_mvn2, L_inno);
-=======
-  for(g in 1:G){
-    target += normal_lpdf(gammas[g,] | prior_gamma[,1],prior_gamma[,2]);
-    target += cauchy_lpdf(sd_R[g,] | prior_sd_R[,1], prior_sd_R[,2]);
-    if(n_mvn1>0){
-      target += lkj_corr_cholesky_lpdf(L[g,] | prior_LKJ);
-    }
-    if(n_mvn2>0){
-      target += lkj_corr_cholesky_lpdf(L2[g,] | prior_LKJ);
-    }
-    target += lkj_corr_cholesky_lpdf(L_inno[g,] | prior_LKJ);
-
-    if(n_innos_fix>0){
-      target += cauchy_lpdf(sigma[g,] | prior_sigma[,1], prior_sigma[,2]);
-    }
-
-    if(n_cov > 1){
-      target += normal_lpdf(b_re_pred[g,] | prior_b_re_pred[,1], prior_b_re_pred[,2]);
-    }
-    if(n_out > 0){
-      target += normal_lpdf(alpha_out[g,] | prior_alpha_out[,1], prior_alpha_out[,2]);
-      target += normal_lpdf(b_out_pred[g,] | prior_b_out[,1], prior_b_out[,2]);
-      target += cauchy_lpdf(sigma_out[g,] | prior_sigma_out[,1], prior_sigma_out[,2]);
-    }
-
-    if(n_fixed > 0){
-      target += normal_lpdf(b_fix[g,] | prior_b_fix[,1],prior_b_fix[,2]);
-    }
-  }
->>>>>>> RDSEM
 
   for (pp in 1:N) {
     // store number of observations per person
@@ -252,11 +196,7 @@ model {
 
     array[obs_id - maxLag] vector[D_cen] y_use;
 
-<<<<<<< HEAD
     // individual parameters from (multivariate) normal distribution
-=======
-  // individual parameters from (multivariate) normal distribution
->>>>>>> RDSEM
     if(n_iid > 0){
       for(jj in pos_iid){
          target += normal_lpdf(b_free[pp,jj] | bmu[pp,jj], sd_R[pp_g, jj]);
