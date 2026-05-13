@@ -16,6 +16,15 @@ data {
   int<lower=1> N_obs; 	          // observations in total: N * TP
   int<lower=1> n_pars;            // number of parameters
   int<lower=1> n_random;          // number of random effects
+
+  //new
+  int<lower=0> n_mvn1;
+  int<lower=0> n_mvn2;
+  int<lower=0> n_iid;
+  array[n_iid] int pos_iid;
+  array[n_mvn1] int pos_mvn1;
+  array[n_mvn2] int pos_mvn2;
+
   int n_fixed;
   array[1, n_fixed] int is_fixed;
   array[n_random] int is_random;  // which parameters to model person-specific
@@ -96,6 +105,12 @@ data {
 
   array[D] int<lower=0,upper=1> is_wcen;   // parameter should be within centered = 1; should not = 0
   array[D] int<lower=0,upper=D> D_cen_pos; // pos of parameters that should be centered
+
+  array[D] int<lower=0, upper=1> is_rdsem;
+  array[D] int<lower=0> N_pred_rdsem;
+  array[D, max(N_pred_rdsem)] int<lower=0> D_pred_rdsem;
+  array[D] int Dpos1_rdsem;
+
   int<lower=1> grainsize;
 }
 
@@ -131,7 +146,8 @@ parameters {
   array[G] vector[n_fixed] b_fix;        // fixed parameters
   array[G] vector<lower=0>[n_random] sd_R;        // random effect SD
   array[G] vector<lower=0>[n_innos_fix] sigma;    // SDs of fixed innovation variances
-  array[G] cholesky_factor_corr[n_random] L;      // cholesky factor of random effects correlation matrix
+  array[G] cholesky_factor_corr[n_mvn1] L;      // cholesky factor of random effects correlation matrix
+  array[G] cholesky_factor_corr[n_mvn2] L2;     // cholesky factor of random effects correlation matrix
   array[G] row_vector[n_random] gammas;           // fixed effect (intercepts)
   array[G] vector[n_cov_bs] b_re_pred;            // regression coefs of RE prediction
   array[G] vector[n_out] alpha_out;               // outcome precition intercepts
@@ -178,10 +194,16 @@ transformed parameters{
 
 model {
   array[D] vector[N_obs] y_merge = y;
-  array[G] matrix[n_random, n_random] SIGMA;
+  array[G] matrix[n_mvn1, n_mvn1] SIGMA;
+  array[G] matrix[n_mvn2, n_mvn2] SIGMA2;
 
   for(g in 1:G){
-    SIGMA[g] = diag_pre_multiply(sd_R[g], L[g]); // covariance matrix of parameters by group
+    if(n_mvn1 > 0){
+      SIGMA[g] = diag_pre_multiply(sd_R[g,pos_mvn1], L[g,]);
+    }
+    if(n_mvn2 > 0){
+      SIGMA2[g] = diag_pre_multiply(sd_R[g,pos_mvn2], L2[g,]);
+    }
   }
 
   // missings and censoring
@@ -196,18 +218,19 @@ model {
   }
 
   // (Hyper-)Priors
-  priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, prior_LKJ, sigma,
+  priors_lp(gammas, prior_gamma, sd_R, prior_sd_R, L, L2, prior_LKJ, sigma,
   n_innos_fix, prior_sigma, n_cov, b_re_pred, prior_b_re_pred, n_out, alpha_out, prior_alpha_out,
-  b_out_pred, prior_b_out, sigma_out, prior_sigma_out, n_fixed, b_fix, prior_b_fix);
+  b_out_pred, prior_b_out, sigma_out, prior_sigma_out, n_fixed, b_fix, prior_b_fix, n_mvn1, n_mvn2);
 
   target += reduce_sum(
     partial_sum_log_lik,
     seq_N,
     grainsize,
-    N_obs_id, g_id, b_free, gammas, SIGMA, D_cen, maxLag, D,
+    N_obs_id, g_id, b_free, gammas, SIGMA, SIGMA2, D_cen, maxLag, D,
     is_wcen, y_merge, pos_start, pos_end, pos_start_cov, pos_end_cov, b, D_cen_pos, N_pred,
     Lag_pred, D_pred, D_pred2, Lag_pred2, Dpos1, Dpos2, sd_noise, n_inno_covs,
-    eta_cov, inno_cov_load, bmu, sd_R, sd_inncov, n_random
+    eta_cov, inno_cov_load, bmu, sd_R, sd_inncov, n_random, n_mvn1, n_mvn2, n_iid,
+    pos_iid, pos_mvn1, pos_mvn2, is_rdsem, N_pred_rdsem, D_pred_rdsem, Dpos1_rdsem
   );
 
 
@@ -219,9 +242,15 @@ model {
 }
 
 generated quantities{
-  array[G] matrix[n_random,n_random] bcorr; // random coefficients correlation matrix
-    for(g in 1:G){
-        bcorr[g] = multiply_lower_tri_self_transpose(L[g]);
-      }
+  array[G] matrix[n_mvn1,n_mvn1] bcorr;  // random coefficients correlation matrix
+  array[G] matrix[n_mvn2,n_mvn2] bcorr2; // random coefficients correlation matrix
+  for(g in 1:G){
+    if(n_mvn1 > 0){
+      bcorr[g] = multiply_lower_tri_self_transpose(L[g]);
+    }
+    if(n_mvn2 > 0){
+      bcorr2[g] = multiply_lower_tri_self_transpose(L2[g]);
+    }
+    }
 }
 

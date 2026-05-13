@@ -4,6 +4,7 @@ real partial_sum_log_lik(array[] int slice_N, int start, int end,
     array[] vector b_free,
     array[] row_vector gammas,
     array[] matrix SIGMA,
+    array[] matrix SIGMA2,
     int D_cen,
     int maxLag,
     int D,
@@ -30,7 +31,21 @@ real partial_sum_log_lik(array[] int slice_N, int start, int end,
     matrix bmu,
     array[] vector sd_R,
     array[] vector sd_inncov,
-    int n_random
+    int n_random,
+
+    //new
+    int n_mvn1,
+    int n_mvn2,
+    int n_iid,
+    array[] int pos_iid,
+    array[] int pos_mvn1,
+    array[] int pos_mvn2,
+
+    // rdsem 
+    array[] int is_rdsem,
+    array[] int N_pred_rdsem,
+    array[,] int D_pred_rdsem,
+    array[] int Dpos1_rdsem
     ) {
 
       real lp = 0;
@@ -42,18 +57,26 @@ real partial_sum_log_lik(array[] int slice_N, int start, int end,
         int gg_p = g_id[pp];       // group
 
         // level 2 prediction
-        if (n_random == 1){
-          lp += normal_lpdf(b_free[pp, 1] | bmu[pp, 1], sd_R[gg_p, 1]);
-        } else{
-          lp += multi_normal_cholesky_lpdf(b_free[pp, 1: n_random]| bmu[pp, 1:n_random], SIGMA[gg_p]);
-        }
-        array[n_inno_covs] vector[obs_id - maxLag] eta_cov_id;
-        if(n_inno_covs > 0){
-          for (n_inno in 1:n_inno_covs){
-            eta_cov_id[n_inno, ] = eta_cov[n_inno, pos_start_cov[pp]:pos_end_cov[pp]];
-            lp += normal_lpdf(eta_cov_id[n_inno,] | 0, sd_inncov[n_inno, pp]);
+        // individual parameters from (multivariate) normal distribution
+        if(n_iid > 0){
+          for(jj in pos_iid){
+            lp += normal_lpdf(b_free[pp,jj] | bmu[pp,jj], sd_R[gg_p, jj]);
           }
         }
+        if(n_mvn1 > 0) {
+          lp += multi_normal_cholesky_lpdf(b_free[pp, pos_mvn1] | bmu[pp, pos_mvn1], SIGMA[gg_p]);
+        }
+        if(n_mvn2 > 0) {
+          lp += multi_normal_cholesky_lpdf(b_free[pp, pos_mvn2] | bmu[pp, pos_mvn2], SIGMA2[gg_p]);
+        }
+
+        array[n_inno_covs] vector[obs_id - maxLag] eta_cov_id;
+          if(n_inno_covs > 0){
+            for (n_inno in 1:n_inno_covs){
+              eta_cov_id[n_inno, ] = eta_cov[n_inno, pos_start_cov[pp]:pos_end_cov[pp]];
+              lp += normal_lpdf(eta_cov_id[n_inno,] | 0, sd_inncov[n_inno, pp]);
+            }
+          }
 
         // array of predicted values
         array[D_cen] vector[obs_id-maxLag] mus;
@@ -70,13 +93,23 @@ real partial_sum_log_lik(array[] int slice_N, int start, int end,
           }
         }
 
+        if( sum(is_rdsem) > 0 ){
+          for (d in 1:D) {
+            if (is_rdsem[d] == 1 ) {
+              for(k in 1:N_pred_rdsem[d]){
+                y_cen[d,] = y_cen[d,] - b[pp,(Dpos1_rdsem[d]+(k-1))] * y_cen[D_pred_rdsem[d,k],];
+              }
+            }
+          }
+        }
+
         for(d in 1:D){
 
           if(is_wcen[d] == 1){
             // build prediction matrix for specific dimensions
             int n_cols; // matrix dimensions
             n_cols = (n_inno_covs>0 && d<3) ? N_pred[d] + n_inno_covs : N_pred[d];
-            {
+            if (N_pred[d] > 0) {
               matrix[obs_id - maxLag, n_cols] b_mat; // dimension specific prediction matrix: time points * predictors
               vector[n_cols] b_use; //
               for(nd in 1:N_pred[d]){ // AR effect and CL effects
@@ -97,6 +130,8 @@ real partial_sum_log_lik(array[] int slice_N, int start, int end,
               }
 
               mus[D_cen_pos[d]] = b_mat * b_use;
+            } else {
+              mus[D_cen_pos[d],] = rep_vector(0, (obs_id - maxLag));
             }
             lp += normal_lpdf(y_cen[d, (1+maxLag):obs_id] | mus[D_cen_pos[d]], sd_noise[D_cen_pos[d],pp]);
           }
