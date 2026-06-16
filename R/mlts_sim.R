@@ -326,56 +326,78 @@ mlts_sim <- function(model, default = FALSE, N = NULL, N_G = NULL, TP, burn.in =
   }
   colnames(W[[gg]]) <- c("Intercept", cov_name)
 
-  for(i in 1:infos$n_random){
-    # get expected individual parameters
-    pred_use = infos$RE.PREDS[infos$RE.PREDS$re_no ==i,]
-    val_use = model$true.val[model$group==gg & model$Param %in% pred_use$Param]
-
-    if(nrow(pred_use)>0){
-      bmu[,i] = W[[gg]][,c(1,pred_use$pred_no+1)] %*% c(gammas[i], val_use)
-    } else {
-      bmu[,i] = gammas[i]
+invalid_ar_count <- 0
+  ar_condition <- TRUE
+  
+  while (ar_condition){
+    for(i in 1:infos$n_random){
+      # get expected individual parameters
+      pred_use = infos$RE.PREDS[infos$RE.PREDS$re_no ==i,]
+      val_use = model$true.val[model$group==gg & model$Param %in% pred_use$Param]
+  
+      if(nrow(pred_use)>0){
+        bmu[,i] = W[[gg]][,c(1,pred_use$pred_no+1)] %*% c(gammas[i], val_use)
+      } else {
+        bmu[,i] = gammas[i]
+      }
     }
-  }
-
-  # calculate covariances from correlations
-  n_random = infos$n_random
-  rand.pars = infos$re_pars$Param
-
-  # variance covariance matrix of random effects
-  if(n_random == 1){
-    cov_mat = model$true.val[model$Type=="Random effect SD" & model$group == gg]
-  } else {
-    cov_mat = diag(model$true.val[model$Type=="Random effect SD" & model$group == gg]^2)
-    for(i in 1:n_random){
-      for(j in 1:n_random){
-        if(i < j){
-          r = model$true.val[model$Param == paste0("r_",rand.pars[i],".", rand.pars[j]) & model$group == gg]
-          if(length(r) == 0){r = 0}
-          cov_mat[i,j] = cov_mat[j,i] <- r * sqrt(cov_mat[i,i]) * sqrt(cov_mat[j,j])
+  
+    # calculate covariances from correlations
+    n_random = infos$n_random
+    rand.pars = infos$re_pars$Param
+  
+    # variance covariance matrix of random effects
+    if(n_random == 1){
+      cov_mat = model$true.val[model$Type=="Random effect SD" & model$group == gg]
+    } else {
+      cov_mat = diag(model$true.val[model$Type=="Random effect SD" & model$group == gg]^2)
+      for(i in 1:n_random){
+        for(j in 1:n_random){
+          if(i < j){
+            r = model$true.val[model$Param == paste0("r_",rand.pars[i],".", rand.pars[j]) & model$group == gg]
+            if(length(r) == 0){r = 0}
+            cov_mat[i,j] = cov_mat[j,i] <- r * sqrt(cov_mat[i,i]) * sqrt(cov_mat[j,j])
+          }
         }
       }
     }
+  
+  
+    #### sample random effects from multivariate normal distribution and add to bmus
+    btw_random = matrix(NA, nrow = N_G[gg], ncol = infos$n_random)
+  
+    if(n_random == 1){
+      btw_random = bmu + stats::rnorm(n = N_G[gg], mean = 0, sd = cov_mat)
+    } else {
+      btw_random = bmu + mvtnorm::rmvnorm(n = N_G[gg], mean = rep(0, infos$n_random), sigma = cov_mat)
+    }
+    colnames(btw_random) = infos$fix_pars$Param[infos$is_random]
+  
+    # check for AR parameters with absolute values below "1"
+    posAR = infos$fix_pars[infos$fix_pars$isRandom==1 & infos$fix_pars$isAR==1, "no"]
+  
+    # SICHERHEITSABFRAGE: Gibt es überhaupt zufällige AR-Effekte?
+    if (length(posAR) > 0) {
+      if (sum(abs(btw_random[, posAR]) >= 1) == 0) {
+        ar_condition <- FALSE # Alles stabil, wir können raus
+      } else {
+        invalid_ar_count <- invalid_ar_count + 1
+      }
+    } else {
+      ar_condition <- FALSE # Keine AR-Effekte da, also auch nichts instabil
+    }
+    
+    if (invalid_ar_count > 10) {
+      stop("Sampling was stopped, because AR effects bigger than 1 were sampled more than 10 times. Consider ",
+           "setting the true values of the fixed effect or the random effect SD to a lower value.")
+    }
   }
 
-
-  #### sample random effects from multivariate normal distribution and add to bmus
-  btw_random = matrix(NA, nrow = N_G[gg], ncol = infos$n_random)
-
-  if(n_random == 1){
-    btw_random = bmu + stats::rnorm(n = N_G[gg], mean = 0, sd = cov_mat)
-  } else {
-    btw_random = bmu + mvtnorm::rmvnorm(n = N_G[gg], mean = rep(0, infos$n_random), sigma = cov_mat)
+  # Optionale Nachricht für dich in der Konsole:
+  if (invalid_ar_count > 0) {
+    message(invalid_ar_count, " draws needed to be repeated, because AR-effects were bigger than 1")
   }
-  colnames(btw_random) = infos$fix_pars$Param[infos$is_random]
 
-  # check for AR parameters with absolute values below "1"
-  posAR = infos$fix_pars[infos$fix_pars$isRandom==1 & infos$fix_pars$isAR==1, "no"]
-
-  if(sum(abs(btw_random[,posAR]) >= 1)){
-    stop("Absolute individual AR effects greater than 1 were sampled. Consider
-            setting the true values of the fixed effect or the random effect SD to a lower value.")
-  }
 
   # now combine fixed effects and random effects
   btw[[gg]] = matrix(NA, nrow = N_G[gg], infos$n_pars)
