@@ -283,16 +283,18 @@ model {
 
   target += reduce_sum(
     partial_sum_log_lik,
-    seq_N,
+    b_free,
     grainsize,
-    N_obs_id, g_id, b_free, gammas, SIGMA, SIGMA2, D_cen, maxLag, D,
-    is_wcen, y, pos_start, pos_end, pos_start_cov, pos_end_cov, b, D_cen_pos, N_pred,
-    Lag_pred, D_pred, D_pred2, Lag_pred2, Dpos1, Dpos2, sd_noise, n_miss, n_miss_D,
+    N_obs_id, g_id, gammas, SIGMA, SIGMA2, D_cen, maxLag, D,
+    is_wcen, y, pos_start, pos_end, pos_start_cov, pos_end_cov, D_cen_pos, N_pred,
+    Lag_pred, D_pred, D_pred2, Lag_pred2, Dpos1, Dpos2, n_miss, n_miss_D,
     pos_miss_D, y_impute, pos_start_miss, pos_end_miss, seq_N_miss, n_censL,
     n_censL_D, pos_censL_D, y_impute_censL, pos_start_censL, pos_end_censL,
     seq_N_censL, n_censR, n_censR_D, pos_censR_D, y_impute_censR, pos_start_censR,
-    pos_end_censR, seq_N_censR, n_inno_covs, eta_cov, inno_cov_load, bmu, sd_R, sd_inncov, n_random,
-    n_mvn1, n_mvn2, n_iid, pos_iid, pos_mvn1, pos_mvn2, is_rdsem, N_pred_rdsem, D_pred_rdsem, Dpos1_rdsem
+    pos_end_censR, seq_N_censR, n_inno_covs, eta_cov, inno_cov_load, sd_R, n_random,
+    n_mvn1, n_mvn2, n_iid, pos_iid, pos_mvn1, pos_mvn2, is_rdsem, N_pred_rdsem, D_pred_rdsem, Dpos1_rdsem,
+    n_pars, is_random, n_fixed, b_fix, is_fixed, n_cov, n_cov_bs, n_cov_mat, b_re_pred, W,
+    innos_rand, innos_fix_pos, innos_pos, inno_cov_pos, sigma
   );
 
 

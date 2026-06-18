@@ -138,7 +138,7 @@ mlts_fit <- function(model,
                      print_warning = TRUE,
                      threads_per_chain = 1,
                      grainsize = 1,
-                     missings = c("inside", "outside"),
+                     missings = c("inside", "outside", "optimized"),
                      ...
 ){
   missings <- match.arg(missings)
@@ -355,6 +355,8 @@ mlts_fit <- function(model,
           stan_file <- system.file("stan_raw", "VAR_manifest_threading.stan", package="mlts")
         } else if (missings == "outside"){
           stan_file <- system.file("stan_raw", "VAR_manifest_threading_oldMissings.stan", package="mlts")
+        } else if (missings == "optimized"){
+          stan_file <- system.file("stan_raw", "VAR_manifest_threading_optimized.stan", package="mlts")
         }
         model_to_use <- rstan::stan_model(file = stan_file)
         # set grainsize
