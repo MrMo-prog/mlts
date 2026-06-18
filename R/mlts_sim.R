@@ -387,7 +387,7 @@ invalid_ar_count <- 0
       ar_condition <- FALSE # Keine AR-Effekte da, also auch nichts instabil
     }
     
-    if (invalid_ar_count > 10) {
+    if (invalid_ar_count > N/2) {
       stop("Sampling was stopped, because AR effects bigger than 1 were sampled more than 10 times. Consider ",
            "setting the true values of the fixed effect or the random effect SD to a lower value.")
     }
