@@ -230,35 +230,12 @@ parameters {
 }
 
 transformed parameters{
-  matrix[N, n_random] bmu;     // gammas of person-specific parameters
-  array[D_cen] vector[N] sd_noise;
   matrix[N, n_pars] b;
-  array[n_inno_covs] vector[N] sd_inncov;
+
 
   // transformation of log-innovation variances if modeled as cluster-specific
   b = calculate_b(N, n_pars, n_random, is_random, b_free, n_fixed, G, g_id_pos,
   N_G, b_fix, is_fixed);
-
-  bmu = calculate_bmu(G, N, n_random, gammas, n_cov, n_cov_bs, n_cov_mat, b_re_pred,
-                     g_id_pos, W, N_G);
-
-
-  for(d in 1:D_cen){
-      if (innos_rand[d] == 0){
-        for(g in 1:G){
-          sd_noise[d, g_id_pos[g, 1:N_G[g]]] = rep_vector(sigma[g, innos_fix_pos[d]], N_G[g]);
-        }
-      }
-      else{
-        sd_noise[d] = sqrt(exp(b[,innos_pos[d]]));  // random effect transformed from log(var) to sd for each person
-      }
-  }
-  // transform log innovation covarainces
-  if(n_inno_covs > 0){
-    for(i in 1:n_inno_covs){
-      sd_inncov[i,1:N] = sqrt(exp(to_vector(b[,inno_cov_pos[1,i]])));
-    }
-  }
 }
 
 
@@ -308,6 +285,11 @@ model {
 generated quantities{
   array[G] matrix[n_mvn1,n_mvn1] bcorr;  // random coefficients correlation matrix
   array[G] matrix[n_mvn2,n_mvn2] bcorr2; // random coefficients correlation matrix
+  matrix[N, n_random] bmu;     // gammas of person-specific parameters
+  array[D_cen] vector[N] sd_noise;
+  array[n_inno_covs] vector[N] sd_inncov;
+
+
   for(g in 1:G){
     if(n_mvn1 > 0){
       bcorr[g] = multiply_lower_tri_self_transpose(L[g]);
@@ -315,6 +297,25 @@ generated quantities{
     if(n_mvn2 > 0){
       bcorr2[g] = multiply_lower_tri_self_transpose(L2[g]);
     }
+  }
+
+  bmu = calculate_bmu(G, N, n_random, gammas, n_cov, n_cov_bs, n_cov_mat, b_re_pred,
+                     g_id_pos, W, N_G);
+  for(d in 1:D_cen){
+      if (innos_rand[d] == 0){
+        for(g in 1:G){
+          sd_noise[d, g_id_pos[g, 1:N_G[g]]] = rep_vector(sigma[g, innos_fix_pos[d]], N_G[g]);
+        }
+      }
+      else{
+        sd_noise[d] = sqrt(exp(b[,innos_pos[d]]));  // random effect transformed from log(var) to sd for each person
+      }
+  }
+  // transform log innovation covarainces
+  if(n_inno_covs > 0){
+    for(i in 1:n_inno_covs){
+      sd_inncov[i,1:N] = sqrt(exp(to_vector(b[,inno_cov_pos[1,i]])));
     }
+  }
 }
 
