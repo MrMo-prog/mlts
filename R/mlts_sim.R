@@ -1,7 +1,11 @@
 #' Simulate data from mlts model
 #'
 #' @details
-#' A function to generate data from an output of \code{\link[mlts]{mlts_model}}.
+#' A function to generate data from an output of \code{\link[mlts]{mlts_model}}. 
+#' During data generation, the function ensures that sampled individual-specific 
+#' autoregressive (AR) effects remain within the bounds of stationarity (absolute value < 1). 
+#' If values outside this range are sampled, they are automatically resampled up to 
+#' a specified maximum number of times (`max_ar_mistakes`).
 #'
 #' @param model `data.frame`. Output of \code{\link[mlts]{mlts_model}}.
 #' @param default logical. If set to `TRUE`, default prior specifications are
@@ -19,6 +23,9 @@
 #' variable(s) will be set to 0 per default.
 #' @param exogenous Matrix of numeric values of exogenous variables with `N`*(`TP`+`burn.in`)
 #' rows and separate columns for each variable.
+#' @param max_ar_mistakes integer. Maximum number of resampling attempts allowed when 
+#' person-specific autoregressive (AR) effects are sampled with absolute values >= 1 
+#' (which would violate stationarity). Defaults to 10.
 #' @return An object of class \code{"mlts_simdata"}.
 #' The object is a list containing the following components:
 #' \item{model}{the model object passed to `mlts_sim` with true parameter values used
@@ -60,7 +67,7 @@
 #'
 
 mlts_sim <- function(model, default = FALSE, N = NULL, N_G = NULL, TP, burn.in = 50, seed = NULL,
-                     seed.true = 1, btw.var.sds = NULL, exogenous = NULL){
+                     seed.true = 1, btw.var.sds = NULL, exogenous = NULL, max_ar_mistakes = 10){
 
 
 
@@ -371,7 +378,7 @@ mlts_sim <- function(model, default = FALSE, N = NULL, N_G = NULL, TP, burn.in =
     counter = 0
     total_invalid_ar <- 0
     while (ar_condition){
-      if (counter >= 100){
+      if (counter >= max_ar_mistakes){
         stop("Sampling was stopped, because AR effects bigger than 1 were sampled more than 100 times. Consider ",
            "setting the true values of the fixed effect or the random effect SD to a lower value.")
       }
