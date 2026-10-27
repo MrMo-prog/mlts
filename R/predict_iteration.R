@@ -1,32 +1,43 @@
-residuals <- function(fit_obj, ts) {
-
-  if (is.null(fit_obj$person.pars.summary)){
-    stop("Person-specific paramters are necessary for this function to work. Please set monitor_person_pars to TRUE and refit the model.", call. = FALSE)
-  }
+predict_iteration <- function(fit_obj, ts, b) {
 
   D <- fit_obj$standata$D
   N <- fit_obj$standata$N
   N_obs_id <- fit_obj$standata$N_obs_id
   is_wcen <- fit_obj$standata$is_wcen
-  person_pars <- fit_obj$person.pars.summary
+
+  N_pred <- fit_obj$standata$N_pred
+  maxLag <- fit_obj$standata$maxLag
+  Lag_pred <- fit_obj$standata$Lag_pred
+  Lag_pred2 <- fit_obj$standata$Lag_pred2
+  D_cen <- fit_obj$standata$D_cen
+  D_cen_pos <- fit_obj$standata$D_cen_pos
+  D_pred2 <- fit_obj$standata$D_pred2
+  D_pred <- fit_obj$standata$D_pred
+  Dpos1 <- fit_obj$standata$Dpos1
+  Dpos2 <- fit_obj$standata$Dpos2
+
+  is_rdsem <- fit_obj$standata$is_rdsem
+  N_pred_rdsem <- fit_obj$standata$N_pred_rdsem
+
 
   # step 1 --> calcualte y_cen
   y_cen <- vector("list", N)
   pos <- 1
+
   for (pp in seq_len(N)){
       obs_id = N_obs_id[pp]
       y_cen[[pp]] <- matrix(NA_real_, nrow = obs_id, ncol = D)
     for (d in seq_len(D)){
       if (is_wcen[d] == 1){
-        y_cen[[pp]][,d] <- fit_obj$data[pos:(pos + obs_id - 1), ts[d]] -
-        person_pars$mean[person_pars$ID == pp & person_pars$Param == paste0("mu_", d)]
+        y_cen[[pp]][,d] <- fit_obj$data[pos:(pos + obs_id - 1), ts[d]] - 
+          b[pp, D_cen_pos[d]]
       } else {
         y_cen[[pp]][,d] <- fit_obj$data[pos:(pos + obs_id - 1), ts[d]]
       }
     }
+
+
     # check for rdsem
-    is_rdsem <- fit_obj$standata$is_rdsem
-    N_pred_rdsem <- fit_obj$standata$N_pred_rdsem
     if (sum(is_rdsem) > 0){
       for (d in seq_len(D)){
         if (is_rdsem[d] == 1){
@@ -40,22 +51,7 @@ residuals <- function(fit_obj, ts) {
   }
 
   # step 2 --> calculate mus
-  N_pred <- fit_obj$standata$N_pred
-  maxLag <- fit_obj$standata$maxLag
-  Lag_pred <- fit_obj$standata$Lag_pred
-  Lag_pred2 <- fit_obj$standata$Lag_pred2
-  D_cen <- fit_obj$standata$D_cen
-  D_cen_pos <- fit_obj$standata$D_cen_pos
-  D_pred2 <- fit_obj$standata$D_pred2
-  D_pred <- fit_obj$standata$D_pred
-  Dpos1 <- fit_obj$standata$Dpos1
-  Dpos2 <- fit_obj$standata$Dpos2
-
-
   mus <- vector("list", N)
-  samples_b <- rstan::extract(fit_obj$stanfit, pars = "b_free")$b_free
-  b <- apply(samples_b, c(2, 3), mean)
-
   for (pp in seq_len(N)){
     obs_id = N_obs_id[pp]
     mus[[pp]] <- matrix(NA_real_, nrow = obs_id - maxLag, ncol = D_cen)
@@ -92,13 +88,6 @@ residuals <- function(fit_obj, ts) {
       }
     }
   }
-  residuals <- vector("list", N)
-  for (pp in seq_len(N)){
-    obs_id <- N_obs_id[pp]
-    residuals[[pp]] <- y_cen[[pp]][(1+maxLag):obs_id, D_cen_pos, drop = FALSE] - mus[[pp]]
-    colnames(residuals[[pp]]) <- ts[D_cen_pos]
-  }
 
-
-  return(residuals)
+  return(list(mus = mus, y_cen = y_cen))
 }
