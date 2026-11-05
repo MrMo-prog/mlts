@@ -22,11 +22,13 @@ predict_iteration <- function(fit_obj, ts, b) {
 
   # step 1 --> calcualte y_cen
   y_cen <- vector("list", N)
+  sim_effects <- vector("list", N)
   pos <- 1
 
   for (pp in seq_len(N)){
       obs_id = N_obs_id[pp]
       y_cen[[pp]] <- matrix(NA_real_, nrow = obs_id, ncol = D)
+      sim_effects[[pp]] <- matrix(0, nrow = obs_id, ncol = D)
     for (d in seq_len(D)){
       if (is_wcen[d] == 1){
         y_cen[[pp]][,d] <- fit_obj$data[pos:(pos + obs_id - 1), ts[d]] - 
@@ -42,7 +44,10 @@ predict_iteration <- function(fit_obj, ts, b) {
       for (d in seq_len(D)){
         if (is_rdsem[d] == 1){
           for (k in seq_len(N_pred_rdsem[d])){
-            y_cen[[pp]][, d] <- y_cen[[pp]][, d] - b[pp, (fit_obj$standata$Dpos1_rdsem[d] + (k-1))] * y_cen[[pp]][, fit_obj$standata$D_pred_rdsem[d, k]]
+            sim_eff <- b[pp, (fit_obj$standata$Dpos1_rdsem[d] + (k-1))] *
+              y_cen[[pp]][, fit_obj$standata$D_pred_rdsem[d, k]]
+            sim_effects[[pp]][, d] <- sim_effects[[pp]][, d] + sim_eff
+            y_cen[[pp]][, d] <- y_cen[[pp]][, d] - sim_eff
           }
         }
       }
@@ -89,5 +94,27 @@ predict_iteration <- function(fit_obj, ts, b) {
     }
   }
 
-  return(list(mus = mus, y_cen = y_cen))
+  # step 3 --> create y_pred
+  y_pred <- vector("list", N)
+  for (pp in seq_len(N)){
+    obs_id <- N_obs_id[pp]
+    y_pred[[pp]] <- matrix(NA_real_, nrow = obs_id - maxLag, ncol = D_cen)
+    for (d in seq_len(D)){
+      if (is_wcen[d] == 1){
+        y_pred[[pp]][,D_cen_pos[d]] <- mus[[pp]][, D_cen_pos[d]] + b[pp, D_cen_pos[d]]
+      }
+    }
+
+    # check for rdsem
+    if (sum(is_rdsem) > 0){
+      for (d in seq_len(D)){
+        if (is_rdsem[d] == 1){
+          y_pred[[pp]][, D_cen_pos[d]] <- y_pred[[pp]][, D_cen_pos[d]] +
+            sim_effects[[pp]][(maxLag + 1):obs_id, d]
+        }
+      }
+    }
+  }
+
+  return(list(mus = mus, y_cen = y_cen, y_pred = y_pred))
 }
