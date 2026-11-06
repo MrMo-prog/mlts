@@ -77,6 +77,14 @@ mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_l
       y_pred_all[[pp]][s, , ] <- result$y_pred[[pp]]
     }
   }
+  obs_index <- ave(
+      seq_len(nrow(fit_obj$data)),
+      fit_obj$data$num_id,
+      FUN = seq_along
+    )
+
+  index_df <- data.frame(ID = fit_obj$data$num_id,
+                         obs_index = obs_index)
   if (summary == TRUE){
     y_pred_means <- vector("list", N)
     if (se) {
@@ -119,8 +127,8 @@ mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_l
       }
       pos <- pos + n_obs
     }
-    result_df <- as.data.frame(fit_obj$data[, c("ID", "beep")])
-    colnames(result_df) <- c("ID", "beep")
+    result_df <- index_df
+    colnames(result_df) <- c("ID", "obs_index")
     y_pred_df <- as.data.frame(y_pred_mat)
     colnames(y_pred_df) <- paste0(ts[seq_len(D_cen)], "_pred")
     result_df <- cbind(result_df, y_pred_df)
@@ -151,9 +159,10 @@ mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_l
     }
     dimnames(out_mat_mu)[[3]] <- ts[seq_len(D_cen)]
     dimnames(out_mat_y_pred)[[3]] <- ts[seq_len(D_cen)]
+
     out_list <- list(mu = out_mat_mu,
                      y_pred = out_mat_y_pred,
-                     index = fit_obj$data[, c("ID", "beep")])
+                     index = index_df)
     return(out_list)
   }
 }

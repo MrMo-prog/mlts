@@ -35,12 +35,12 @@ mlts_residuals <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci
     resid[s, , ] <- y_obs_mat - pred_s
   }
   dimnames(resid)[[3]] <- ts[seq_len(D_cen)]
-
   if (!summary) {
-    return(resid)
+    out_list <- list(residuals = resid, index = predictions$index)
+    return(out_list)
   } else {
-    result_df <- as.data.frame(fit_obj$data[, c("ID", "beep")])
-    colnames(result_df) <- c("ID", "beep")
+
+    result_df <- predictions$index
     resid_means <- apply(resid, c(2, 3), mean)
     colnames(resid_means) <- paste0(ts[seq_len(D_cen)], "_resid")
     result_df <- cbind(result_df, as.data.frame(resid_means))
