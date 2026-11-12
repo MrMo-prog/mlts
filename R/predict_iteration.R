@@ -80,12 +80,6 @@ predict_iteration <- function(fit_obj, ts, b) {
             }
           }
           b_use[1:N_pred[d]] <- b[pp, Dpos1[d]:Dpos2[d]]
-
-#          if (fit_obj$standata$n_inno_covs > 0 && d < 3){
-#            b_mat[,(N_pred[d] + 1 )] <- fit_obj$standata$eta_cov_id[1, ]
-#            b_use[N_pred[d] + 1] <- fit_obj$standata$inno_cov_load[d]
-#          }
-
           mus[[pp]][, D_cen_pos[d]] <- b_mat %*% b_use
         } else {
           mus[[pp]][, D_cen_pos[d]] <- rep(0, obs_id - maxLag)

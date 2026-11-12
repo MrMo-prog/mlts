@@ -1,4 +1,4 @@
-mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_level = 0.95){
+mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_level = 0.95, output = "data.frame"){
   std <- fit_obj$standata
 
   if ("Measurement" %in% fit_obj$model$Model) {
@@ -10,6 +10,12 @@ mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_l
   has_b_free <- any(grepl("^b_free", names(fit_obj$stanfit)))
   if (std$n_random > 0 && !has_b_free) {
     stop("This method currently requires 'monitor_person_pars = TRUE' during fitting.")
+  }
+  if (output != "data.frame" && output != "matrix_list"){
+    stop("'output' has to be set to 'data.frame' or 'matrix_list'.", call. = FALSE)
+  }
+  if (output == "matrix_list" && summary == FALSE) {
+    stop("output 'matrix_list' is only possible when summary = TRUE ")
   }
   # TODO: Implement fallback for monitor_person_pars = FALSE using person.pars.summary
 
@@ -127,8 +133,19 @@ mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_l
       }
       pos <- pos + n_obs
     }
-    result_df <- index_df
-    colnames(result_df) <- c("ID", "obs_index")
+
+    if (output == "matrix_list"){
+      pos <- 1
+      result_list <- vector("list", N)
+      for (pp in seq_len(N)){
+        n_obs <- N_obs_id[pp]
+        result_list[[pp]] <- y_pred_mat[pos : (pos + n_obs - 1), , drop = FALSE]
+        pos <- pos + n_obs
+      }
+      return(result_list)
+    } else if (output == "data.frame") {
+      result_df <- index_df
+    colnames(result_df) <- c("num_id", "obs_index")
     y_pred_df <- as.data.frame(y_pred_mat)
     colnames(y_pred_df) <- paste0(ts[seq_len(D_cen)], "_pred")
     result_df <- cbind(result_df, y_pred_df)
@@ -146,6 +163,7 @@ mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_l
       result_df <- cbind(result_df, lower_df, upper_df)
     }
     return(result_df)
+    }
 
   } else { 
     out_mat_mu <- array(NA_real_, dim = c(S, nrow(fit_obj$data), D_cen))
