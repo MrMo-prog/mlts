@@ -4,12 +4,20 @@ mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_l
   if ("Measurement" %in% fit_obj$model$Model) {
     stop("This function is currently not supported for latent multi-indicator models.", call. = FALSE)
   }
+
   if (!summary && (se || ci)) {
     warning("Arguments 'ci', 'se' and 'ci_level' will be ignored when summary = FALSE.", call. = FALSE)
   }
   has_b_free <- any(grepl("^b_free", names(fit_obj$stanfit)))
-  if (std$n_random > 0 && !has_b_free) {
-    stop("This method currently requires 'monitor_person_pars = TRUE' during fitting.")
+  fallback <- FALSE
+  if (std$n_random > 0 && !has_b_free){
+    fallback <- TRUE
+    se <- FALSE
+    ci <- FALSE
+    warning("Person-specific posterior draws are not available.
+     Predictions and residuals will be calculated using posterior means.
+      Posterior standard errors and credible intervals cannot be computed.
+       Consider setting 'monitor_person_pars' = TRUE during fitting.")
   }
   if (output != "data.frame" && output != "matrix_list"){
     stop("'output' has to be set to 'data.frame' or 'matrix_list'.", call. = FALSE)
@@ -17,7 +25,6 @@ mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_l
   if (output == "matrix_list" && summary == FALSE) {
     stop("output 'matrix_list' is only possible when summary = TRUE ")
   }
-  # TODO: Implement fallback for monitor_person_pars = FALSE using person.pars.summary
 
 
   n_fixed <- std$n_fixed
@@ -33,25 +40,41 @@ mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_l
   N_obs_id <- std$N_obs_id
   D <- std$D
 
+  if (fallback){
+    S <- 1
+    b_free_col <- tail(colnames(rstan::get_posterior_mean(fit_obj$stanfit, "b_free")), 1)
+    b_free_samples <- rstan::get_posterior_mean(fit_obj$stanfit, "b_free")[, b_free_col]
 
-  if (n_random > 0) {
-    samples_b_free <- rstan::extract(fit_obj$stanfit, pars = "b_free")$b_free
-    if (length(dim(samples_b_free)) == 2) {
-      dim(samples_b_free) <- c(dim(samples_b_free)[1], N, n_random)
-    }
-    S_total <- dim(samples_b_free)[1]
-    b_free <- samples_b_free
-  }
+    b_free <- array(NA_real_, dim = c(1, N, n_random))
+    b_free[1, , ] <- matrix(b_free_samples, nrow = N, ncol = n_random, byrow = TRUE)
 
-  if (n_fixed > 0){
-    samples_b_fix <- rstan::extract(fit_obj$stanfit, pars = "b_fix")$b_fix
-    if (length(dim(samples_b_fix)) == 2) {
-      dim(samples_b_fix) <- c(dim(samples_b_fix)[1], G, n_fixed)
+    if (n_fixed > 0){
+      b_fix_col <- tail(colnames(rstan::get_posterior_mean(fit_obj$stanfit, "b_fix")), 1)
+      b_fix_samples <- rstan::get_posterior_mean(fit_obj$stanfit, "b_fix")[, b_fix_col]
+      
+      b_fix <- array(NA_real_, dim = c(1, G, n_fixed))
+      b_fix[1, , ] <- matrix(b_fix_samples, nrow = G, ncol = n_fixed, byrow = TRUE)
     }
-    S_total <- dim(samples_b_fix)[1]
-    b_fix <- samples_b_fix
+  } else {
+    if (n_random > 0) {
+      samples_b_free <- rstan::extract(fit_obj$stanfit, pars = "b_free")$b_free
+      if (length(dim(samples_b_free)) == 2) {
+        dim(samples_b_free) <- c(dim(samples_b_free)[1], N, n_random)
+      }
+      S_total <- dim(samples_b_free)[1]
+      b_free <- samples_b_free
+    }
+
+    if (n_fixed > 0){
+      samples_b_fix <- rstan::extract(fit_obj$stanfit, pars = "b_fix")$b_fix
+      if (length(dim(samples_b_fix)) == 2) {
+        dim(samples_b_fix) <- c(dim(samples_b_fix)[1], G, n_fixed)
+      }
+      S_total <- dim(samples_b_fix)[1]
+      b_fix <- samples_b_fix
+    }
+    S <- S_total
   }
-  S <- S_total
 
   b <- array(data = NA_real_, dim = c(S, N, P))
   if (n_random > 0){
@@ -93,6 +116,7 @@ mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_l
                          obs_index = obs_index)
   if (summary == TRUE){
     y_pred_means <- vector("list", N)
+
     if (se) {
       y_pred_ses <- vector("list", N)
       y_pred_mat_se <- matrix(NA_real_, nrow = nrow(fit_obj$data), ncol = D_cen)
@@ -121,6 +145,7 @@ mlts_predict <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_l
         y_pred_means[[pp]] <- array(y_pred_all[[pp]][1, , , drop = FALSE], dim = dim(y_pred_all[[pp]])[2:3])
       }
     }
+
     y_pred_mat <- matrix(NA_real_, nrow = nrow(fit_obj$data), ncol = D_cen)
     pos = 1
     for (pp in seq_len(N)){

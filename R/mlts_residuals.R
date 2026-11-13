@@ -1,4 +1,5 @@
 mlts_residuals <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci_level = 0.95, output = "data.frame") {
+  std <- fit_obj$standata
   if ("Measurement" %in% fit_obj$model$Model) {
     stop("This function is currently not supported for latent multi-indicator models.", call. = FALSE)
   }
@@ -11,8 +12,12 @@ mlts_residuals <- function(fit_obj, ts, summary = TRUE, se = TRUE, ci = TRUE, ci
   if (output == "matrix_list" && summary == FALSE) {
     stop("Parameter output can only be set to 'matrix_list' when summary = TRUE ")
   }
+  has_b_free <- any(grepl("^b_free", names(fit_obj$stanfit)))
+  if (std$n_random > 0 && !has_b_free){
+    se <- FALSE
+    ci <- FALSE
+  }
 
-  std <- fit_obj$standata
   D_cen <- std$D_cen
   D <- std$D
   N <- std$N
